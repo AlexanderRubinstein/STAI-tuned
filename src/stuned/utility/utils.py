@@ -26,8 +26,6 @@ import contextlib
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import importlib
-import io
-import re
 import matplotlib.pyplot as plt
 
 
@@ -42,11 +40,8 @@ TEST_ENV_NAME = os.environ["TEST_ENV"]
 BASHRC_PATH = os.path.join(os.environ["HOME"], ".bashrc")
 NEW_SHELL_INIT_COMMAND = "source {} && conda activate".format(BASHRC_PATH)
 FLOATING_POINT = "."
-PACKAGE_SEPARATOR = "."
 NAME_SEP = "_"
-NAME_NUMBER_SEPARATOR = '-'
 NULL_CONTEXT = contextlib.nullcontext()
-PROJECT_ROOT_ENV_NAME = "PROJECT_ROOT_PROVIDED_FOR_STUNED"
 
 
 DEFAULT_SLEEP_TIME = 10
@@ -62,11 +57,6 @@ SYSTEM_PLATFORM = platform.system().lower()
 
 LIST_START_SYMBOL = '['
 LIST_END_SYMBOL = ']'
-DELIMETER = ','
-QUOTE_CHAR = '\"'
-ESCAPE_CHAR = '\\'
-INF = float("Inf")
-TOL = 1e6
 
 
 # matplotlib
@@ -153,61 +143,36 @@ def check_element_in_iterable(
     element,
     element_name="element",
     iterable_name="iterable",
-    reference=None,
-    raise_if_wrong=True
+    reference=None
 ):
-    element_in_iterable = element in iterable
-    if raise_if_wrong:
-        try:
-            assert element_in_iterable
-        except Exception as e:
-            exception_msg = "No {} \"{}\" in {}:\n{}".format(
-                    element_name,
-                    element,
-                    iterable_name,
-                    iterable
-                )
-            if reference is not None:
-                exception_msg += "\nFor:\n {}".format(reference)
-            raise Exception(exception_msg)
-    return element_in_iterable
+    try:
+        assert element in iterable
+    except Exception as e:
+        exception_msg = "No {} \"{}\" in {}:\n{}".format(
+                element_name,
+                element,
+                iterable_name,
+                iterable
+            )
+        if reference is not None:
+            exception_msg += "\nFor:\n {}".format(reference)
+        raise Exception(exception_msg)
 
 
-def check_dict(
-    dict,
-    required_keys,
-    optional_keys=[],
-    check_reverse=False,
-    raise_if_wrong=True
-):
-
-    check_1 = False
-    check_2 = False
-
+def check_dict(dict, required_keys, optional_keys=[], check_reverse=False):
     for key in required_keys:
-        check_1 = check_element_in_iterable(
-            dict,
-            key,
-            "key",
-            "dict",
-            raise_if_wrong=raise_if_wrong
-        )
-        if not check_1:
-            break
-    if check_1 and check_reverse:
+        check_element_in_iterable(dict, key, "key", "dict")
+    if check_reverse:
         allowed_keys = set(required_keys + optional_keys)
         for key in dict.keys():
-            check_2 = check_element_in_iterable(
+            check_element_in_iterable(
                 allowed_keys,
                 key,
                 "key",
                 "set of allowed keys",
-                reference=dict,
-                raise_if_wrong=raise_if_wrong
+                reference=dict
             )
-            if not check_2:
-                break
-    return check_1 and check_2
+
 
 def runcmd(cmd, verbose=False, logger=None):
 
@@ -269,15 +234,6 @@ def get_model_device(model):
     return next(model.parameters()).device
 
 
-def get_project_root_path():
-    if not PROJECT_ROOT_ENV_NAME in os.environ:
-        raise Exception(
-            f"STAI-tuned expects project root path "
-            f"in variable \"{PROJECT_ROOT_ENV_NAME}\""
-        )
-    return os.environ[PROJECT_ROOT_ENV_NAME]
-
-
 def get_stuned_root_path():
     return os.path.abspath(
         os.path.dirname(
@@ -296,7 +252,7 @@ def make_unique_run_name(hashed_config_diff):
 
 def get_current_run_folder(experiment_name, hashed_config_diff):
     return os.path.join(
-        get_project_root_path(),
+        get_stuned_root_path(),
         DEFAULT_EXPERIMENTS_FOLDER,
         experiment_name,
         make_unique_run_name(hashed_config_diff)
@@ -328,6 +284,69 @@ def get_value_from_config(file_path, value_name):
     )
 
 
+
+
+
+def get_checkpoint(experiment_config, logger=None):
+    checkpoint_config = experiment_config["checkpoint"]
+    if (
+        "starting_checkpoint_path" in checkpoint_config
+            and checkpoint_config["starting_checkpoint_path"] is not None
+    ):
+        checkpoint = init_checkpoint(
+            starting_checkpoint_path
+                =checkpoint_config["starting_checkpoint_path"],
+            check_only_model=checkpoint_config["check_only_model"],
+            logger=logger
+        )
+    else:
+        checkpoint = init_checkpoint(
+            experiment_name=experiment_config["experiment_name"],
+            logger=logger
+        )
+    return checkpoint
+
+
+def init_empty_checkpoint(experiment_name):
+    return {
+        "experiment_name": experiment_name,
+        "current_epoch": 0,
+        "model": None,
+        "optimizer": None,
+        "lr_scheduler": None,
+        "criterion": None
+    }
+
+
+def init_checkpoint(
+    starting_checkpoint_path=None,
+    check_only_model=False,
+    experiment_name=None,
+    logger=None
+):
+    # checkpoint contents:
+    #   - experiment_name
+    #   - current epoch number
+    #   - model
+    #   - optimizer
+    #   - lr_scheduler
+    #   - criterion
+    if starting_checkpoint_path is not None:
+        log_or_print(
+            "Reading checkpoing from {}..".format(starting_checkpoint_path),
+            logger=logger,
+            auto_newline=True
+        )
+        checkpoint = read_checkpoint(starting_checkpoint_path)
+    else:
+        assert experiment_name is not None
+        checkpoint = init_empty_checkpoint(
+            experiment_name
+        )
+    check_checkpoint(checkpoint, check_only_model)
+    return checkpoint
+
+
 def log_or_print(msg, logger=None, auto_newline=False):
     if logger:
         logger.log(msg, auto_newline=auto_newline)
@@ -342,46 +361,35 @@ def error_or_print(msg, logger=None, auto_newline=False):
         print(msg, file=sys.stderr)
 
 
-def read_checkpoint(checkpoint_path, map_location=None):
-
-    class CPU_Unpickler(pickle.Unpickler):
-        def find_class(self, module, name):
-            if module == 'torch.storage' and name == '_load_from_bytes':
-                return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
-            else: return super().find_class(module, name)
-
-    def do_read_checkpoint(file, map_location=None):
-
-        if map_location == "cpu" or map_location == torch.device(type='cpu'):
-            checkpoint = CPU_Unpickler(file).load()
-        else:
-            try:
-                checkpoint = torch.load(
-                    file,
-                    map_location=map_location
-                )
-            except:
-                checkpoint = pickle.load(file)
-
-        return checkpoint
-
+def read_checkpoint(checkpoint_path):
     if os.path.exists(checkpoint_path):
-        file = open(checkpoint_path, "rb")
-        try:
-            checkpoint = do_read_checkpoint(
-                file,
-                map_location=map_location
-            )
-        except RuntimeError:
-            checkpoint = do_read_checkpoint(
-                file,
-                map_location='cpu'
-            )
+        checkpoint = pickle.load(open(checkpoint_path, "rb"))
     else:
         raise Exception(
             "Checkpoint path does not exist: {}".format(checkpoint_path)
         )
     return checkpoint
+
+
+def check_checkpoint(checkpoint, check_only_model):
+    if check_only_model:
+        check_dict(checkpoint,
+            [
+                "model"
+            ]
+        )
+    else:
+        check_dict(checkpoint,
+            [
+                "experiment_name",
+                "current_epoch",
+                "model",
+                "optimizer",
+                "lr_scheduler",
+                "criterion"
+            ],
+            check_reverse=True
+        )
 
 
 def save_checkpoint(
@@ -401,7 +409,7 @@ def save_checkpoint(
         print(log_msg)
     for obj in checkpoint.values():
         prepare_for_pickling(obj)
-    torch.save(
+    pickle.dump(
         checkpoint,
         open(checkpoint_savepath, "wb")
     )
@@ -697,11 +705,10 @@ def write_into_csv_with_column_names(
     row_number,
     column_name,
     value,
-    delimiter=DELIMETER,
-    quotechar=QUOTE_CHAR,
+    delimiter=',',
+    quotechar=None,
     quoting=csv.QUOTE_NONE,
-    escapechar=ESCAPE_CHAR,
-    doublequote=True,
+    escapechar='\\',
     replace_nulls=False,
     append_row=False,
     use_lock=True
@@ -738,6 +745,8 @@ def write_into_csv_with_column_names(
 
     lock = make_file_lock(file_path) if use_lock else NULL_CONTEXT
 
+    value = as_str_for_csv(value)
+
     with lock:
 
         with open(file_path, 'r', newline='') as csv_file, tempfile:
@@ -750,16 +759,14 @@ def write_into_csv_with_column_names(
                 delimiter=delimiter,
                 quotechar=quotechar,
                 quoting=quoting,
-                escapechar=escapechar,
-                doublequote=doublequote
+                escapechar=escapechar
             )
             writer = csv.writer(
                 tempfile,
                 delimiter=delimiter,
                 quotechar=quotechar,
                 quoting=quoting,
-                escapechar=escapechar,
-                doublequote=doublequote
+                escapechar=escapechar
             )
 
             appended_column = False
@@ -860,7 +867,7 @@ def remove_elements_from_the_end(sequence, element_to_remove):
 
 
 def itself_and_lower_upper_case(word):
-    return (word, word.lower(), word.upper())
+    return [word, word.lower(), word.upper()]
 
 
 def decode_strings_in_dict(
@@ -874,9 +881,6 @@ def decode_strings_in_dict(
 
         if isinstance(value, str):
 
-            if value == "":
-                continue
-
             value = decode_val_from_str(
                 value,
                 list_separators,
@@ -889,13 +893,10 @@ def decode_strings_in_dict(
 
 def decode_val_from_str(
     value,
-    list_separators=[' ', ', ', ','],
+    list_separators=[' '],
     list_start_symbol='[',
     list_end_symbol=']'
 ):
-
-    if isinstance(value, str):
-        value = value.strip()
 
     if str_is_number(value):
 
@@ -930,6 +931,9 @@ def decode_val_from_str(
 
     elif value in itself_and_lower_upper_case("True"):
         value = True
+
+    if isinstance(value, str):
+        value = value.strip()
 
     return value
 
@@ -988,10 +992,6 @@ def parse_float_or_int_from_string(value_as_str):
         return int(value_as_str)
 
 
-def escape_all_chars_in_string(input_string, escapechar=ESCAPE_CHAR):
-    return escapechar + escapechar.join(list(input_string))
-
-
 def parse_list_from_string(
     value_as_str,
     list_separators,
@@ -1018,12 +1018,6 @@ def parse_list_from_string(
             list_separators[0]
         )
 
-        value_as_str = re.sub(
-            f"({escape_all_chars_in_string(list_separators[0])})+",
-            list_separators[0],
-            value_as_str
-        )
-
         result_list = value_as_str.split(list_separators[0])
 
         for i in range(len(result_list)):
@@ -1038,14 +1032,7 @@ def parse_list_from_string(
         return result_list
 
 
-def read_csv_as_dict(
-    csv_path,
-    delimeter=DELIMETER,
-    quotechar=QUOTE_CHAR,
-    quoting=csv.QUOTE_NONE,
-    escapechar=ESCAPE_CHAR,
-    doublequote=True
-):
+def read_csv_as_dict(csv_path, delimeter=',', quotechar='\"'):
 
     result = {}
 
@@ -1053,10 +1040,7 @@ def read_csv_as_dict(
         csv_reader = csv.DictReader(
             input_csv,
             delimiter=delimeter,
-            quotechar=quotechar,
-            quoting=quoting,
-            escapechar=escapechar,
-            doublequote=doublequote
+            quotechar=quotechar
         )
 
         result[0] = {}
@@ -1070,9 +1054,7 @@ def read_csv_as_dict(
     return result
 
 
-def normalize_path(path, current_dir=None):
-    if current_dir is None:
-        current_dir = get_project_root_path()
+def normalize_path(path, current_dir):
     if path is None:
         return None
     assert isinstance(path, str)
@@ -1171,27 +1153,13 @@ def bootstrap_by_key_subname(input_dict, subname_to_bootstrap):
         input_dict[key] = new_value
 
 
-def find_by_subkey(
-    iterable,
-    subkey,
-    assert_found=False,
-    only_first_occurence=True
-):
-    result = []
+def find_by_subkey(iterable, subkey, assert_found=False):
     for key in iterable:
         if isinstance(key, str) and subkey in key:
-            if only_first_occurence:
-                return key
-            else:
-                result.append(key)
-
-    if len(result) > 0:
-        return result
-
+            return key
     if assert_found:
         assert False, \
             "Key with subkey {} wasn't found in {}.".format(subkey, iterable)
-
     return None
 
 
@@ -1216,27 +1184,12 @@ def retrier_factory(
     logger=None,
     final_func=raise_func,
     max_retries=DEFAULT_NUM_ATTEMTPS,
-    sleep_time=DEFAULT_SLEEP_TIME,
-    infer_logger_from_args=None
+    sleep_time=DEFAULT_SLEEP_TIME
 ):
-
-    assert (
-            logger != "auto" and infer_logger_from_args is None
-        or
-            logger == "auto" and infer_logger_from_args is not None
-    ), "Provide \"infer_logger_from_args\" iff \"logger == auto\""
 
     def retrier(func):
 
-        # without this line logger is not seen in wrapped_func
-        logger_in_retrier = logger
-
         def wrapped_func(*args, **kwargs):
-
-            logger = logger_in_retrier
-
-            if logger == "auto":
-                logger = infer_logger_from_args(*args, **kwargs)
 
             num_attempts = 0
             while True:
@@ -1246,26 +1199,16 @@ def retrier_factory(
                     if num_attempts >= max_retries:
                         return final_func(logger)
                     num_attempts += 1
-                    time.sleep(sleep_time)
-                    retry_print = None
-                    if logger is not None and hasattr(logger, "retry_print"):
-                        retry_print = logger.retry_print
-                        logger.retry_print = False
-                    retrying_msg = "{}\nRetrying {}: {}/{}.\n\n".format(
-                        traceback.format_exc(),
-                        func.__name__,
-                        num_attempts,
-                        max_retries
+                    error_or_print(
+                        "{}\nRetrying {}: {}/{}.\n\n".format(
+                            traceback.format_exc(),
+                            func.__name__,
+                            num_attempts,
+                            max_retries
+                        ),
+                        logger
                     )
-                    try:
-                        error_or_print(
-                            retrying_msg,
-                            logger
-                        )
-                    except:
-                        print(retrying_msg)
-                    if retry_print is not None:
-                        logger.retry_print = retry_print
+                    time.sleep(sleep_time)
 
         return wrapped_func
 
@@ -1313,12 +1256,12 @@ def kill_processes(processes_to_kill, logger=None):
             error_or_print(traceback.format_exc(), logger)
 
 
-def read_old_checkpoint(checkpoint_path, map_location=None):
+def read_old_checkpoint(checkpoint_path):
     sys.path.insert(
         0,
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "train_eval")
     )
-    checkpoint = read_checkpoint(checkpoint_path, map_location=map_location)
+    checkpoint = read_checkpoint(checkpoint_path)
     sys.path.pop(0)
     return checkpoint
 
@@ -1443,8 +1386,6 @@ def expand_csv(
         keys = list(row_as_dict.keys())
         for key in keys:
             value = row_as_dict[key]
-            if isinstance(value, str):
-                value = value.strip()
             if (
                 isinstance(value, str)
                     and len(value) >= 2
@@ -1487,7 +1428,7 @@ def expand_csv(
 
         return result
 
-    dict_to_expand = read_csv_as_dict(csv_to_expand)
+    dict_to_expand = read_csv_as_dict(csv_to_expand, quotechar='\"')
     expanded_dict = {}
     final_row_id = 0
 
@@ -1544,7 +1485,7 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
     Check every <check_time> seconds whether <path> had any updates (events).
     Observe the <path> for at most <max_time>.
     If there were no updates for <delta> seconds return True, otherwise return
-    False. If watchdog observer failed to start return None.
+    False.
     """
 
     if check_time is None:
@@ -1555,12 +1496,7 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
     event_handler = TimeStampEventHandler()
     observer = Observer()
     observer.schedule(event_handler, path, recursive=True)
-
-    try:
-        observer.start()
-    except:
-        return None
-
+    observer.start()
     has_events_bool = event_handler.has_events(delta)
     while has_events_bool and i < n:
         time.sleep(check_time)
@@ -1574,105 +1510,27 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
 
 
 # https://github.com/CompVis/latent-diffusion/blob/a506df5756472e2ebaf9078affdde2c4f1502cd4/ldm/util.py#L88
-def import_from_string(string, reload=False, nested_attrs_depth=1):
-
-    module_path_and_attrs = string.rsplit(PACKAGE_SEPARATOR, nested_attrs_depth)
-
-    module_path = module_path_and_attrs[0]
-
-    nested_attrs = module_path_and_attrs[1:]
-
-    module = importlib.import_module(module_path)
-
+def import_from_string(string, reload=False):
+    if '.' in string:
+        module, cls = string.rsplit('.', 1)
+    else:
+        module = string
+        cls = None
     if reload:
-        importlib.reload(module)
-
-    if len(nested_attrs) > 0:
-        module = get_nested_attr(
-            module,
-            nested_attrs
-        )
-
-    return module
+        module_imp = importlib.import_module(module)
+        importlib.reload(module_imp)
+    module_imp = importlib.import_module(module, package=None)
+    if cls is None:
+        return module_imp
+    else:
+        return getattr(module_imp, cls)
 
 
-def as_str_for_csv(value, chars_to_remove=[]):
-
+def as_str_for_csv(value):
     if value is None:
         value = "None"
     value = str(value)
-
-    for char in chars_to_remove:
-        value = value.replace(char, '')
-
     return value
-
-
-def check_consistency(
-    first,
-    second,
-    first_consistent_group,
-    second_consistent_group
-):
-    def make_msg(
-        first,
-        first_consistent_group,
-        second,
-        second_consistent_group
-    ):
-        return (
-            "{} is from {}, therefore {} "
-            "should be from {}."
-        ).format(
-            first,
-            first_consistent_group,
-            second,
-            second_consistent_group
-        )
-
-    try:
-        if first in first_consistent_group:
-            exception_msg = make_msg(
-                first,
-                first_consistent_group,
-                second,
-                second_consistent_group
-            )
-            assert second in second_consistent_group
-        if second in second_consistent_group:
-            exception_msg = make_msg(
-                second,
-                second_consistent_group,
-                first,
-                first_consistent_group
-            )
-            assert first in first_consistent_group
-    except AssertionError as e:
-        raise Exception(exception_msg)
-
-
-def aggregate_tensors_by_func(input_list, func=torch.mean):
-    return func(
-        torch.stack(
-            input_list
-        )
-    )
-
-
-def func_for_dim(func, dim):
-
-    def inner_func(*args, **kwargs):
-        return func(*args, **kwargs, dim=dim)
-
-    return inner_func
-
-
-def parse_name_and_number(name_and_number, separator=NAME_NUMBER_SEPARATOR):
-    assert separator in name_and_number
-    split = name_and_number.split(separator)
-    assert len(split) == 2
-    assert is_number(split[-1])
-    return split[0], parse_float_or_int_from_string(split[-1])
 
 
 def show_images(images, label_lists=None):
@@ -1732,14 +1590,3 @@ def get_cmap(image):
     if len(squeezed_shape) == 2:
         cmap = "gray"
     return cmap
-
-
-def compute_tensor_cumsums(tensor):
-    result = []
-    for dim_i in range(len(tensor.shape)):
-        result.append(torch.linalg.norm(torch.cumsum(tensor, dim=dim_i)))
-    return result
-
-
-def compute_unique_tensor_value(tensor):
-    return torch.round(TOL * aggregate_tensors_by_func(compute_tensor_cumsums(tensor)))

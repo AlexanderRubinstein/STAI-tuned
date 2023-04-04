@@ -1,18 +1,16 @@
 import sys
 import traceback
+import os
 import multiprocessing as mp
 
 
 # local modules
-from .logger import (
-    BaseLogger,
-    make_logger
-)
-from .utils import (
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from utility.logger import make_logger
+from utility.utils import (
     compute_dicts_diff,
     read_csv_as_dict
 )
-
 
 DEFAULT_N_PROCESSES = min(24, mp.cpu_count())
 
@@ -80,11 +78,10 @@ def expect_failed(
     return wrapped_func
 
 
-class DummyLogger(BaseLogger):
+class DummyLogger:
 
     def __init__(self):
         self.reset()
-        self.retry_print = True
 
     def log(self, msg, auto_newline=False):
         self.log_strings += msg
@@ -146,12 +143,3 @@ def assert_csv_diff(
 
         assert len(values_changed) == 0, \
             "Values_changed:\n{}".format(values_changed)
-
-
-class DummyObject:
-    def __init__(self):
-        pass
-
-
-def make_dummy_object():
-    return DummyObject()
