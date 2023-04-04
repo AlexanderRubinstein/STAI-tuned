@@ -4,18 +4,18 @@ import shutil
 import torch
 import sys
 import traceback
-import wandb # slow
+import wandb
 import contextlib
 import time
 import subprocess
-from torch.utils.tensorboard import SummaryWriter # a bit slow
+from torch.utils.tensorboard import SummaryWriter
 import copy
-import gspread # a bit slow
-import pandas as pd # slow
+import gspread
+import pandas as pd
 import csv
 import re
 import warnings
-from pydrive2.auth import GoogleAuth, RefreshError # a bit slow
+from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 import psutil
 import multiprocessing as mp
@@ -23,8 +23,8 @@ from tempfile import NamedTemporaryFile
 
 
 # local modules
-from .utils import (
-    QUOTE_CHAR,
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from utility.utils import (
     SYSTEM_PLATFORM,
     get_current_time,
     get_current_run_folder,
@@ -48,18 +48,12 @@ from .utils import (
     raise_unknown,
     assert_two_values_are_close,
     folder_still_has_updates,
-    as_str_for_csv,
-    remove_file_or_folder,
-    log_or_print,
-    get_project_root_path,
-    compute_tensor_cumsums,
-    itself_and_lower_upper_case
+    as_str_for_csv
 )
 
 
 PROGRESS_FREQUENCY = 0.01
 INDENT = "    "
-LOGGER_ARG_NAME = "logger"
 
 
 # string style
@@ -98,12 +92,10 @@ SUBMITTED_STATUS = "Submitted"
 RUNNING_STATUS = "Running"
 COMPLETED_STATUS = "Completed"
 FAIL_STATUS = "Fail"
-WHETHER_TO_RUN_COLUMN = "whether_to_run"
 
 
 OUTPUT_CSV_KEY = "output_csv"
 PATH_KEY = "path"
-ROW_NUMBER_KEY = "row_number"  # starts with 0
 GDRIVE_FOLDER_KEY = "gdrive_storage_folder"
 STDOUT_KEY = "stdout"
 STDERR_KEY = "stderr"
@@ -113,7 +105,6 @@ STDERR_KEY = "stderr"
 WANDB_URL_COLUMN = "WandB url"
 WANDB_QUIET = True
 WANDB_INIT_RETRIES = 100
-WANDB_SLEEP_BETWEEN_INIT_RETRIES = 60
 
 
 # Tensorboard
@@ -176,15 +167,6 @@ DEFAULT_GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-FILE_TYPES_ALLOWED_TO_SYNC = ("text/plain", "application/x-yaml")
-SPREADSHEETS_URL = "https://docs.google.com/spreadsheets"
-WORKSHEET_SEPARATOR = "::"
-DELTA_PREFIX = "delta"
-SLURM_PREFIX = "slurm"
-PREFIX_SEPARATOR = ":"
-OLD_PREFIX = "Old "
-PREV_RUN_FOLDER_KEY = "prev_run_folder"
-PLACEHOLDERS_FOR_DEFAULT = itself_and_lower_upper_case("Default")
 
 
 DAEMON_SLEEP_TIME = 20
@@ -202,41 +184,9 @@ def make_string_style(
         )
 
 
-def infer_logger_from_args(*args, **kwargs):
-
-    # class with self.logger
-    if hasattr(args[0], LOGGER_ARG_NAME):
-        return getattr(args[0], LOGGER_ARG_NAME)
-
-    # keyword logger
-    if LOGGER_ARG_NAME in kwargs:
-        return kwargs[LOGGER_ARG_NAME]
-
-    # one of the unnamed args
-    for arg in args:
-        if isinstance(arg, BaseLogger):
-            return arg
-
-    return None
-
-
-def retrier_factory_with_auto_logger(
-    **retrier_factory_kwargs
-):
-    return retrier_factory(
-        logger="auto",
-        infer_logger_from_args=infer_logger_from_args,
-        **retrier_factory_kwargs
-    )
-
-
-class BaseLogger:
-    pass
-
-
 # TODO(Alex | 13.07.2022) inherit from more sophisticated logger
-class RedneckLogger(BaseLogger):
-    def __init__(self, output_folder=None, retry_print=True):
+class RedneckLogger:
+    def __init__(self, output_folder=None):
 
         warnings.showwarning = self.get_warning_wrapper()
 
@@ -246,8 +196,6 @@ class RedneckLogger(BaseLogger):
             self.output_folder = None
             self.stdout_file = None
             self.stderr_file = None
-
-        self.retry_print = retry_print
 
         self.cache = {}
         self.csv_output = None
@@ -350,7 +298,7 @@ class RedneckLogger(BaseLogger):
     def set_csv_output(self, csv_output_config):
         self.csv_output = {}
         assert PATH_KEY in csv_output_config
-        assert ROW_NUMBER_KEY in csv_output_config
+        assert "row_number" in csv_output_config
         assert os.path.exists(csv_output_config[PATH_KEY])
 
         self.csv_output = copy.deepcopy(csv_output_config)
@@ -360,14 +308,11 @@ class RedneckLogger(BaseLogger):
                 DEFAULT_GOOGLE_CREDENTIALS_PATH
             )
 
-    def log_csv(self, column_value_pairs):
+    def log_csv(self, column_name, value):
 
         retrier_factory(self)(log_csv_for_concurrent)(
             self.csv_output[PATH_KEY],
-            [
-                (self.csv_output[ROW_NUMBER_KEY], column_name, value)
-                    for column_name, value in column_value_pairs
-            ]
+            [(self.csv_output["row_number"], column_name, value)]
         )
 
     def log_separator(self):
@@ -415,7 +360,7 @@ class RedneckLogger(BaseLogger):
         carriage_return=False
     ):
 
-        self.print_output(
+        self.logger_output(
             msg,
             LOG_PREFIX,
             prefix_style_code=make_string_style(
@@ -444,7 +389,7 @@ class RedneckLogger(BaseLogger):
             PURPLE_COLOR_CODE
         )
 
-        self.print_output(
+        self.logger_output(
             msg,
             INFO_PREFIX,
             prefix_style_code=info_style_code,
@@ -462,7 +407,7 @@ class RedneckLogger(BaseLogger):
         carriage_return=False
     ):
 
-        self.print_output(
+        self.logger_output(
             msg,
             ERROR_PREFIX,
             prefix_style_code=make_string_style(
@@ -479,20 +424,7 @@ class RedneckLogger(BaseLogger):
             carriage_return=carriage_return
         )
 
-    def print_output(self, *args, **kwargs):
-        if self.retry_print:
-            self.print_output_with_retries(*args, **kwargs)
-        else:
-            self._print_output(*args, **kwargs)
-
-    @retrier_factory_with_auto_logger()
-    def print_output_with_retries(
-        self,
-        *args, **kwargs
-    ):
-        self._print_output(*args, **kwargs)
-
-    def _print_output(
+    def logger_output(
         self,
         msg,
         prefix_keyword,
@@ -503,7 +435,6 @@ class RedneckLogger(BaseLogger):
         auto_newline=False,
         carriage_return=False
     ):
-
         msg_prefix = "{} {}".format(
             get_current_time(),
             prefix_keyword
@@ -670,15 +601,7 @@ def handle_exception(logger, exception=None):
         logger.error("{}".format(traceback.format_exc()))
     else:
         logger.error("{}\n{}".format(str(exception), traceback.format_exc()))
-
-    try_to_log_in_csv_in_batch(
-        logger,
-        [
-            (STATUS_CSV_COLUMN, FAIL_STATUS),
-            (WHETHER_TO_RUN_COLUMN, "1")
-        ]
-    )
-
+    try_to_log_in_csv(logger, STATUS_CSV_COLUMN, FAIL_STATUS)
     try_to_sync_csv_with_remote(logger)
     if "profiler_results" in logger.cache:
         dump_profiler_results(logger)
@@ -690,43 +613,19 @@ def handle_exception(logger, exception=None):
 
 def try_to_log_in_csv(logger, column_name, value):
 
-    try_to_log_in_csv_in_batch(logger, [(column_name, value)])
-
-
-def try_to_log_in_csv_in_batch(logger, column_value_pairs):
-
     if logger.csv_output is not None:
-        logger.log_csv(column_value_pairs)
+        logger.log_csv(column_name, value)
 
 
-def try_to_sync_csv_with_remote(logger, sync_row_zero=True):
-
+def try_to_sync_csv_with_remote(logger):
     if logger.gspread_client is not None:
-
         worksheet_names = [logger.csv_output["worksheet_name"]] \
             if logger.csv_output["worksheet_name"] is not None \
             else None
-
-        single_rows_per_csv = [logger.csv_output[ROW_NUMBER_KEY]] \
-            if logger.csv_output[ROW_NUMBER_KEY] is not None \
-            else None
-
-        csv_files = [logger.csv_output[PATH_KEY]]
-        spreadsheet_url = logger.csv_output["spreadsheet_url"]
-
-        if single_rows_per_csv is not None and sync_row_zero:
-            logger.gspread_client.upload_csvs_to_spreadsheet(
-                spreadsheet_url,
-                csv_files,
-                worksheet_names=worksheet_names,
-                single_rows_per_csv=[0]
-            )
-
         logger.gspread_client.upload_csvs_to_spreadsheet(
-            spreadsheet_url,
-            csv_files,
-            worksheet_names=worksheet_names,
-            single_rows_per_csv=single_rows_per_csv
+            logger.csv_output["spreadsheet_url"],
+            [logger.csv_output[PATH_KEY]],
+            worksheet_names=worksheet_names
         )
 
 
@@ -799,8 +698,7 @@ def redneck_logger_context(
     log_folder,
     logger=None,
     exp_name="Default experiment",
-    start_time=None,
-    config_to_log_in_wandb=None
+    start_time=None
 ):
     if start_time is None:
         start_time = get_current_time()
@@ -828,75 +726,49 @@ def redneck_logger_context(
         logger.set_csv_output(
             logging_config[OUTPUT_CSV_KEY]
         )
-        try_to_log_in_csv_in_batch(
+        try_to_log_in_csv(
             logger,
-            [
-                (WHETHER_TO_RUN_COLUMN, "0"),
-                (STATUS_CSV_COLUMN, RUNNING_STATUS),
-                (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file))
-            ]
+            STATUS_CSV_COLUMN,
+            RUNNING_STATUS
         )
 
-    # set up google drive sync
+        try_to_log_in_csv(
+            logger,
+            RUN_FOLDER_CSV_COLUMN,
+            os.path.dirname(logger.stdout_file)
+        )
+
     if logging_config[GDRIVE_FOLDER_KEY] is not None:
         logger.create_logs_on_gdrive(
             logging_config[GDRIVE_FOLDER_KEY]
         )
         logger.start_gdrive_daemon()
         logger.log(f"Remote folder with logs: {logger.remote_log_folder_url}")
-        try_to_log_in_csv_in_batch(
-            logger,
-            [
-                (STDOUT_KEY, logger.remote_stdout_url),
-                (STDERR_KEY, logger.remote_stderr_url)
-            ]
-        )
-
-    use_tb = logging_config["use_tb"]
-    tb_log_dir = None
-    tb_upload = False
-    if use_tb:
-        tb_log_dir = os.path.join(
-            log_folder,
-            TB_LOG_FOLDER
-        )
-
-    use_wandb = logging_config["use_wandb"]
-    # init wandb_run if exists
-    if use_wandb:
-        wandb_config = logging_config["wandb"]
-        wandb_dir = os.path.join(
-            get_system_root_path(),
-            "tmp",
-            f"wandb_{get_hostname()}_{os.getpid()}"
-        )
-        os.makedirs(wandb_dir, exist_ok=True)
-        if use_tb and wandb_config.get("sync_tb", False):
-            wandb.tensorboard.patch(root_logdir=tb_log_dir, pytorch=True)
-        logger.wandb_run = init_wandb_run(
-            wandb_config,
-            exp_name,
-            wandb_dir=wandb_dir,
-            config=config_to_log_in_wandb,
-            logger=logger
-        )
-        # extract wandb link
-        wandb_url = logger.wandb_run.get_url()
         try_to_log_in_csv(
             logger,
-            WANDB_URL_COLUMN,
-            wandb_url
+            STDOUT_KEY,
+            logger.remote_stdout_url
         )
-        logger.log(
-            "WandB url: {}".format(wandb_url)
+        try_to_log_in_csv(
+            logger,
+            STDERR_KEY,
+            logger.remote_stderr_url
         )
+
+    # enter tb context if exists
+    use_tb = logging_config["use_tb"]
+    tb_upload = False
 
     # init tb run if exists
     if use_tb:
         tb_config = logging_config["tb"]
         tb_upload = tb_config["upload_online"]
         assert_tb_credentials(tb_config["credentials_path"])
-        assert tb_log_dir is not None
+
+        tb_log_dir = os.path.join(
+            log_folder,
+            TB_LOG_FOLDER
+        )
 
         logger.tb_run = SummaryWriter(tb_log_dir)
 
@@ -910,6 +782,31 @@ def redneck_logger_context(
                 )
             )
         )
+    use_wandb = logging_config["use_wandb"]
+    # init wandb_run if exists
+    if use_wandb:
+        wandb_dir = os.path.join(
+            get_system_root_path(),
+            "tmp",
+            f"wandb_{get_hostname()}_{os.getpid()}"
+        )
+        os.makedirs(wandb_dir, exist_ok=True)
+        logger.wandb_run = init_wandb_run(
+            logging_config["wandb"],
+            exp_name,
+            wandb_dir=wandb_dir,
+            logger=logger
+        )
+        # extract wandb link
+        wandb_url = logger.wandb_run.get_url()
+        try_to_log_in_csv(
+            logger,
+            WANDB_URL_COLUMN,
+            wandb_url
+        )
+        logger.log(
+            "WandB url: {}".format(wandb_url)
+        )
 
     # tell that logger is created
     logger.log("Logger context initialized!")
@@ -921,20 +818,14 @@ def redneck_logger_context(
         logger.tb_run.close()
 
         if tb_upload:
-            logger.log("Making sure that tensorboard folder is synced.")
+
             tb_log_folder_still_updating = folder_still_has_updates(
                 tb_log_dir,
                 MAX_TIME_BETWEEN_TB_LOG_UPDATES,
                 MAX_TIME_TO_WAIT_FOR_TB_TO_SAVE_DATA,
                 check_time=None
             )
-            if tb_log_folder_still_updating is None:
-                logger.error(
-                    f"Failed to start watchdog folder observer "
-                    f"for tensorboard log folder."
-                    f"Most probably: \"[Errno 28] inotify watch limit reached\""
-                )
-            elif tb_log_folder_still_updating:
+            if tb_log_folder_still_updating:
                 logger.error(
                     f"Tensorboard was updating {tb_log_dir} "
                     f"longer than {MAX_TIME_TO_WAIT_FOR_TB_TO_SAVE_DATA} "
@@ -962,13 +853,17 @@ def redneck_logger_context(
         logger.log("wandb is finished")
         logger.wandb_run = None
 
-    try_to_log_in_csv_in_batch(
+    # write walltime in csv if exists
+    try_to_log_in_csv(
         logger,
-        [
-            (WALLTIME_COLUMN, str((get_current_time() - start_time))),
-            (STATUS_CSV_COLUMN, COMPLETED_STATUS),
-            (WHETHER_TO_RUN_COLUMN, "0")
-        ]
+        WALLTIME_COLUMN,
+        str((get_current_time() - start_time))
+    )
+    # write completed status in csv if exists
+    try_to_log_in_csv(
+        logger,
+        STATUS_CSV_COLUMN,
+        COMPLETED_STATUS
     )
     logger.log("Final log line for remote logs!")
     try_to_sync_csv_with_remote(logger)
@@ -1209,170 +1104,189 @@ class GspreadClient:
         self.gspread_credentials = gspread_credentials
         self.client = self._create_client()
 
-    @retrier_factory_with_auto_logger()
     def _create_client(self):
 
-        _, auth_user_filename = make_google_auth(
-            self.gspread_credentials,
-            logger=self.logger
-        )
-        return gspread.oauth(
-            credentials_filename=self.gspread_credentials,
-            authorized_user_filename=auth_user_filename
-        )
+        @retrier_factory(self.logger)
+        def create_client(gspread_credentials):
 
-    @retrier_factory_with_auto_logger()
+            _, auth_user_filename = make_google_auth(gspread_credentials)
+            return gspread.oauth(
+                credentials_filename=gspread_credentials,
+                authorized_user_filename=auth_user_filename
+            )
+
+        return create_client(self.gspread_credentials)
+
     def delete_spreadsheet(
         self,
         spreadsheet_url
     ):
 
-        assert self.client
-        self.client.del_spreadsheet(
-            extract_id_from_spreadsheet_url(spreadsheet_url)
-        )
-
-    @retrier_factory_with_auto_logger()
-    def get_spreadsheet_by_url(self, spreadsheet_url):
-
-        if spreadsheet_url is None:
-
-            spreadsheet = self.client.create(
-                DEFAULT_SPREADSHEET_NAME + '_' + str(get_current_time())
+        @retrier_factory(self.logger)
+        def delete_spreadsheet_for_given_logger(
+            spreadsheet_url
+        ):
+            assert self.client
+            self.client.del_spreadsheet(
+                extract_id_from_spreadsheet_url(spreadsheet_url)
             )
 
-            return spreadsheet
-        else:
-            return self.client.open_by_url(spreadsheet_url)
+        delete_spreadsheet_for_given_logger(
+            spreadsheet_url
+        )
 
-    @retrier_factory_with_auto_logger()
+    def get_spreadsheet_by_url(self, spreadsheet_url):
+
+        @retrier_factory(self.logger)
+        def get_spreadsheet_by_url_for_given_logger(
+            spreadsheet_url
+        ):
+
+            if spreadsheet_url is None:
+
+                spreadsheet = self.client.create(
+                    DEFAULT_SPREADSHEET_NAME + '_' + str(get_current_time())
+                )
+
+                return spreadsheet
+            else:
+                return self.client.open_by_url(spreadsheet_url)
+
+        return get_spreadsheet_by_url_for_given_logger(
+            spreadsheet_url
+        )
+
+
     def upload_csvs_to_spreadsheet(
         self,
         spreadsheet_url,
         csv_files,
-        worksheet_names=None,
-        single_rows_per_csv=None
+        worksheet_names=None
     ):
 
-        def assert_list(value):
-            assert isinstance(value, list), \
-                f"Expected list instead of {value}"
+        @retrier_factory(self.logger)
+        def upload_csvs_to_spreadsheet_for_given_logger(
+            spreadsheet_url,
+            csv_files,
+            worksheet_names
+        ):
 
-        assert_list(csv_files)
-        if worksheet_names is not None:
-            assert_list(worksheet_names)
-        if single_rows_per_csv is not None:
-            assert_list(single_rows_per_csv)
-            assert len(single_rows_per_csv) == len(csv_files)
+            assert isinstance(csv_files, list), \
+                f"Expected list instead of {csv_files}"
+            if worksheet_names is not None:
+                assert isinstance(worksheet_names, list), \
+                    f"Expected list instead of {worksheet_names}"
 
-        new_spreadsheet = False
-        if spreadsheet_url is None:
-            new_spreadsheet = True
+            new_spreadsheet = False
+            if spreadsheet_url is None:
+                new_spreadsheet = True
 
-        spreadsheet = self.get_spreadsheet_by_url(
-            spreadsheet_url
-        )
+            spreadsheet = self.get_spreadsheet_by_url(
+                spreadsheet_url
+            )
 
-        existing_worksheets = list(spreadsheet.worksheets())
-        first_worksheet = existing_worksheets[0]
-        existing_worksheets = list(
-            worksheet.title for worksheet in existing_worksheets
-        )
+            existing_worksheets = list(spreadsheet.worksheets())
+            first_worksheet = existing_worksheets[0]
+            existing_worksheets = list(
+                worksheet.title for worksheet in existing_worksheets
+            )
 
-        if new_spreadsheet:
-            worksheet_names = []
-            for csv_file_path in csv_files:
+            if new_spreadsheet:
+                worksheet_names = []
+                for csv_file_path in csv_files:
 
-                worksheet_names.append(
-                    extract_csv_name_from_path(csv_file_path)
-                )
-        elif worksheet_names is None:
-            worksheet_names = existing_worksheets
-
-        existing_worksheets = set(existing_worksheets)
-
-        assert len(worksheet_names) == len(csv_files)
-
-        removed_default_worksheet = False
-
-        for i in range(len(csv_files)):
-
-            csv_file_path = csv_files[i]
-            worksheet_name = worksheet_names[i]
-
-            single_row = None
-            if single_rows_per_csv is not None:
-                single_row = single_rows_per_csv[i]
-
-            with make_file_lock(csv_file_path):
-
-                if not worksheet_name in existing_worksheets:
-                    spreadsheet.add_worksheet(
-                        title=worksheet_name,
-                        rows=DEFAULT_SPREADSHEET_ROWS,
-                        cols=DEFAULT_SPREADSHEET_COLS
+                    worksheet_names.append(
+                        extract_csv_name_from_path(csv_file_path)
                     )
-                    existing_worksheets.add(worksheet_name)
+            elif worksheet_names is None:
+                worksheet_names = existing_worksheets
 
-                if (
-                    new_spreadsheet
-                        and worksheet_name != first_worksheet
-                        and not removed_default_worksheet
-                ):
+            existing_worksheets = set(existing_worksheets)
 
-                    assert len(existing_worksheets) == 2
-                    spreadsheet.del_worksheet(first_worksheet)
-                    removed_default_worksheet = True
+            assert len(worksheet_names) == len(csv_files)
 
-                csv_file_as_list = list(csv.reader(open(csv_file_path)))
+            removed_default_worksheet = False
 
-                a1_range_to_update = worksheet_name
-                if single_row is not None:
-                    gsheets_row = str(single_row + 1)
-                    a1_range_to_update += '!' + gsheets_row + ':' + gsheets_row
-                    csv_file_as_list = [csv_file_as_list[single_row]]
+            for csv_file_path, worksheet_name in zip(
+                csv_files,
+                worksheet_names
+            ):
 
-                spreadsheet.values_update(
-                    a1_range_to_update,
-                    params={'valueInputOption': 'USER_ENTERED'},
-                    body={'values': csv_file_as_list}
-                )
+                with make_file_lock(csv_file_path):
 
-        return spreadsheet.url
+                    if not worksheet_name in existing_worksheets:
+                        spreadsheet.add_worksheet(
+                            title=worksheet_name,
+                            rows=DEFAULT_SPREADSHEET_ROWS,
+                            cols=DEFAULT_SPREADSHEET_COLS
+                        )
+                        existing_worksheets.add(worksheet_name)
 
-    @retrier_factory_with_auto_logger()
+                    if (
+                        new_spreadsheet
+                            and worksheet_name != first_worksheet
+                            and not removed_default_worksheet
+                    ):
+
+                        assert len(existing_worksheets) == 2
+                        spreadsheet.del_worksheet(first_worksheet)
+                        removed_default_worksheet = True
+
+                    spreadsheet.values_update(
+                        worksheet_name,
+                        params={'valueInputOption': 'USER_ENTERED'},
+                        body={'values': list(csv.reader(open(csv_file_path)))}
+                    )
+
+            return spreadsheet.url
+
+        return upload_csvs_to_spreadsheet_for_given_logger(
+            spreadsheet_url,
+            csv_files,
+            worksheet_names
+        )
+
     def download_spreadsheet_as_csv(
         self,
         spreadsheet_url,
         folder_for_csv,
-        worksheet_names=None,
-        downloaded_files_prefix=''
+        worksheet_names=None
     ):
 
-        os.makedirs(folder_for_csv, exist_ok=True)
+        @retrier_factory(self.logger)
+        def download_spreadsheet_as_csv_for_given_logger(
+            spreadsheet_url,
+            folder_for_csv,
+            worksheet_names
+        ):
 
-        spreadsheet = self.get_spreadsheet_by_url(spreadsheet_url)
+            os.makedirs(folder_for_csv, exist_ok=True)
 
-        worksheets_dict = build_spreadsheet_dict(spreadsheet, worksheet_names)
+            spreadsheet = self.get_spreadsheet_by_url(spreadsheet_url)
 
-        result = []
-        for name, sheet in worksheets_dict.items():
+            worksheets_dict = build_spreadsheet_dict(spreadsheet, worksheet_names)
 
-            df = pd.DataFrame(sheet.get_all_values())
+            result = []
+            for name, sheet in worksheets_dict.items():
 
-            df.rename(columns=df.iloc[0], inplace=True)
-            df.drop(df.index[0], inplace=True)
-            csv_path = os.path.join(
-                folder_for_csv,
-                downloaded_files_prefix + name + ".csv"
-            )
-            df.to_csv(
-                csv_path,
-                index=False
-            )
-            result.append(csv_path)
+                df = pd.DataFrame(sheet.get_all_values())
 
-        return result
+                df.rename(columns=df.iloc[0], inplace=True)
+                df.drop(df.index[0], inplace=True)
+                csv_path = os.path.join(os.path.join(folder_for_csv, name + ".csv"))
+                df.to_csv(
+                    csv_path,
+                    index=False
+                )
+                result.append(csv_path)
+
+            return result
+
+        return download_spreadsheet_as_csv_for_given_logger(
+            spreadsheet_url,
+            folder_for_csv,
+            worksheet_names
+        )
 
 
 def make_gspread_client(
@@ -1410,38 +1324,28 @@ def extract_csv_name_from_path(csv_file_path):
     return os.path.basename(csv_file_path).replace(".csv", '')
 
 
-@retrier_factory_with_auto_logger(
-    max_retries=WANDB_INIT_RETRIES,
-    sleep_time=WANDB_SLEEP_BETWEEN_INIT_RETRIES
-)
-def init_wandb_run(
-    wandb_config,
-    exp_name,
-    wandb_dir,
-    config,
-    logger
-):
+def init_wandb_run(wandb_config, exp_name, wandb_dir, logger):
 
-    wandb_password = get_value_from_config(
-        wandb_config["netrc_path"],
-        "password"
-    )
-    wandb.login(
-        key=wandb_password
-    )
+    @retrier_factory(logger, max_retries=WANDB_INIT_RETRIES)
+    def init_wandb_run_for_given_logger(wandb_config, exp_name, wandb_dir):
+        wandb_password = get_value_from_config(
+            wandb_config["netrc_path"],
+            "password"
+        )
+        wandb.login(
+            key=wandb_password
+        )
 
-    settings = None
-    if SYSTEM_PLATFORM == "linux":
-        settings = wandb.Settings(start_method="fork")
-    return wandb.init(
-        project=wandb_config.get("project", exp_name),
-        entity=wandb_config.get("entity"),
-        tags=wandb_config.get("tags"),
-        dir=wandb_dir,
-        settings=settings,
-        sync_tensorboard=wandb_config.get("sync_tb", False),
-        config=config
-    )
+        settings = None
+        if SYSTEM_PLATFORM == "linux":
+            settings = wandb.Settings(start_method="fork")
+        return wandb.init(
+            project=exp_name,
+            dir=wandb_dir,
+            settings=settings
+        )
+
+    return init_wandb_run_for_given_logger(wandb_config, exp_name, wandb_dir)
 
 
 class GdriveClient:
@@ -1457,11 +1361,15 @@ class GdriveClient:
 
         self.client = self._create_client()
 
-    @retrier_factory_with_auto_logger()
     def _create_client(self):
 
-        gauth, _ = make_google_auth(self.credentials)
-        return GoogleDrive(gauth)
+        @retrier_factory(self.logger)
+        def create_client_for_given_logger():
+
+            gauth, _ = make_google_auth(self.credentials)
+            return GoogleDrive(gauth)
+
+        return create_client_for_given_logger()
 
     def get_node_by_id(self, node_id):
         return self.client.CreateFile({'id': node_id})
@@ -1506,14 +1414,8 @@ def make_gdrive_client(
 def make_google_auth(
     credentials_json,
     auth_user_json_path=DEFAULT_REFRESH_GOOGLE_CREDENTIALS,
-    scopes=DEFAULT_GOOGLE_SCOPES,
-    logger=None
+    scopes=DEFAULT_GOOGLE_SCOPES
 ):
-
-    def do_gauth(settings):
-        gauth = GoogleAuth(settings=settings)
-        gauth.CommandLineAuth()
-        return gauth
 
     credentials = read_json(credentials_json)["installed"]
 
@@ -1530,20 +1432,12 @@ def make_google_auth(
         "oauth_scope": scopes
     }
 
-    try:
-        gauth = do_gauth(settings)
-    except RefreshError:
-        log_or_print(
-            "GAUTH token needs to be refreshed. Removing old one.",
-            logger
-        )
-        remove_file_or_folder(auth_user_json_path)
-        gauth = do_gauth(settings)
+    gauth = GoogleAuth(settings=settings)
+    gauth.CommandLineAuth()
 
     return gauth, auth_user_json_path
 
 
-@retrier_factory_with_auto_logger()
 def sync_local_file_with_gdrive(
     gdrive_client,
     local_filepath,
@@ -1552,16 +1446,28 @@ def sync_local_file_with_gdrive(
     logger=None
 ):
 
-    remote_file = get_gdrive_file_by_url(gdrive_client, remote_url)
+    @retrier_factory(logger)
+    def sync_local_file_with_gdrive_for_given_logger(
+        gdrive_client,
+        local_filepath,
+        remote_url,
+        download
+    ):
+        remote_file = get_gdrive_file_by_url(gdrive_client, remote_url)
+        assert remote_file["mimeType"] == "text/plain"
+        if download:
+            remote_file.GetContentFile(local_filepath)
+        else:
+            remote_file.SetContentFile(local_filepath)
+            remote_file.Upload()
+        return remote_file
 
-    assert remote_file["mimeType"] in FILE_TYPES_ALLOWED_TO_SYNC
-
-    if download:
-        remote_file.GetContentFile(local_filepath)
-    else:
-        remote_file.SetContentFile(local_filepath)
-        remote_file.Upload()
-    return remote_file
+    return sync_local_file_with_gdrive_for_given_logger(
+        gdrive_client,
+        local_filepath,
+        remote_url,
+        download
+    )
 
 
 def get_gdrive_file_by_url(gdrive_client, remote_url):
@@ -1574,17 +1480,8 @@ def log_csv_for_concurrent(
     row_col_value_triplets
 ):
     lock = make_file_lock(csv_path)
-    remove_chars = [QUOTE_CHAR]
-    row_col_value_triplets_clean = []
     with lock:
         for csv_row_number, column_name, value in row_col_value_triplets:
-
-            column_name = as_str_for_csv(column_name, remove_chars)
-            value = as_str_for_csv(value, remove_chars)
-            row_col_value_triplets_clean.append(
-                (csv_row_number, column_name, value)
-            )
-
             write_into_csv_with_column_names(
                 csv_path,
                 csv_row_number,
@@ -1597,120 +1494,11 @@ def log_csv_for_concurrent(
     with lock:
         csv_as_dict = read_csv_as_dict(csv_path)
 
-    for csv_row_number, column_name, value in row_col_value_triplets_clean:
+    for csv_row_number, column_name, value in row_col_value_triplets:
+        value = as_str_for_csv(value)
         assert_two_values_are_close(
             csv_as_dict.get(csv_row_number).get(
                 column_name
             ),
             value
-        )
-
-
-class RedneckProgressBar:
-
-    def __init__(self, total_steps, description="", logger=None):
-        self.logger = logger
-        self.description = description
-        self.total_steps = total_steps
-        self.current_step = 0
-
-    def update(self):
-        self.current_step += 1
-        if self.logger is None:
-            print(
-                f"{self.description}: "
-                f"{self.current_step}/{self.total_steps}"
-            )
-        else:
-            self.logger.progress(
-                self.description,
-                self.current_step,
-                self.total_steps
-            )
-
-
-def make_progress_bar(total_steps, description="", logger=None):
-    return RedneckProgressBar(total_steps, description, logger)
-
-
-def fetch_csv(
-    csv_path,
-    logger,
-    downloaded_file_prefix=''
-):
-
-    spreadsheet_url = None
-    worksheet_name = None
-    gspread_client = None
-
-    if SPREADSHEETS_URL in csv_path:
-        if WORKSHEET_SEPARATOR in csv_path:
-            csv_path_split = csv_path.split(WORKSHEET_SEPARATOR)
-            assert len(csv_path_split) == 2
-            spreadsheet_url = csv_path_split[0]
-            worksheet_name = csv_path_split[1]
-            worksheet_names = [worksheet_name]
-        else:
-            spreadsheet_url = csv_path
-            worksheet_names = None
-
-        gspread_client = make_gspread_client(logger)
-
-        csv_paths = gspread_client.download_spreadsheet_as_csv(
-            spreadsheet_url,
-            os.path.join(
-                get_default_csv_folder(),
-                spreadsheet_url.split("edit#gid")[0].replace(os.sep, "(slash)")
-            ),
-            worksheet_names=worksheet_names,
-            downloaded_files_prefix=downloaded_file_prefix
-        )
-        assert len(csv_paths) == 1
-        csv_path = csv_paths[0]
-
-    return csv_path, spreadsheet_url, worksheet_name, gspread_client
-
-
-def get_default_csv_folder():
-    return os.path.join(
-        get_project_root_path(),
-        "inputs"
-    )
-
-
-def try_to_upload_csv(
-    csv_path,
-    spreadsheet_url,
-    worksheet_name,
-    gspread_client
-):
-    if gspread_client is not None:
-        gspread_client.upload_csvs_to_spreadsheet(
-            spreadsheet_url,
-            csv_files=[csv_path],
-            worksheet_names=[worksheet_name]
-        )
-
-
-def make_prefixed_column_name(name, prefix):
-    return prefix + PREFIX_SEPARATOR + name
-
-
-def make_delta_column_name(name):
-    return make_prefixed_column_name(name, DELTA_PREFIX)
-
-
-def make_slurm_column_name(name):
-    return make_prefixed_column_name(name, SLURM_PREFIX)
-
-
-def log_info(logger, tensor, name):
-    if logger is None:
-        logger = make_logger()
-    logger.log(f"{name} norm: {torch.linalg.norm(tensor)}")
-    cumsums = compute_tensor_cumsums(tensor)
-    for dim_i in range(len(cumsums)):
-        logger.log(
-            f"{name} norm of cumsum for dim: {dim_i}: "
-            f"{cumsums[dim_i]}"
         )

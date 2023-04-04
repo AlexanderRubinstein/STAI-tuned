@@ -1,9 +1,6 @@
 # repo's files
-tmp/
 data/
 cache/
-inputs/
-experiment_configs/
 
 # vscode
 launch.json
