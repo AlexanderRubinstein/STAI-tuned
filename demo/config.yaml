@@ -1,0 +1,15 @@
+initialization_type: 1
+image:
+    shape: [64, 64]
+    color: red
+
+
+params:
+  random_seed: 42
+logging:
+  gdrive_storage_folder: null
+  use_wandb: True
+  wandb:
+    netrc_path: "~/.netrc"
+  use_tb: False
+use_hardcoded_config: False
