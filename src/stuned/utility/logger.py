@@ -15,7 +15,7 @@ import pandas as pd
 import csv
 import re
 import warnings
-from pydrive2.auth import GoogleAuth
+from pydrive2.auth import GoogleAuth, RefreshError
 from pydrive2.drive import GoogleDrive
 import psutil
 import multiprocessing as mp
@@ -48,12 +48,15 @@ from utility.utils import (
     raise_unknown,
     assert_two_values_are_close,
     folder_still_has_updates,
-    as_str_for_csv
+    as_str_for_csv,
+    remove_file_or_folder,
+    log_or_print
 )
 
 
 PROGRESS_FREQUENCY = 0.01
 INDENT = "    "
+LOGGER_ARG_NAME = "logger"
 
 
 # string style
@@ -105,6 +108,7 @@ STDERR_KEY = "stderr"
 WANDB_URL_COLUMN = "WandB url"
 WANDB_QUIET = True
 WANDB_INIT_RETRIES = 100
+WANDB_SLEEP_BETWEEN_INIT_RETRIES = 60
 
 
 # Tensorboard
@@ -184,9 +188,41 @@ def make_string_style(
         )
 
 
+def infer_logger_from_args(*args, **kwargs):
+
+    # class with self.logger
+    if hasattr(args[0], LOGGER_ARG_NAME):
+        return getattr(args[0], LOGGER_ARG_NAME)
+
+    # keyword logger
+    if LOGGER_ARG_NAME in kwargs:
+        return kwargs[LOGGER_ARG_NAME]
+
+    # one of the unnamed args
+    for arg in args:
+        if isinstance(arg, BaseLogger):
+            return arg
+
+    return None
+
+
+def retrier_factory_with_auto_logger(
+    **retrier_factory_kwargs
+):
+    return retrier_factory(
+        logger="auto",
+        infer_logger_from_args=infer_logger_from_args,
+        **retrier_factory_kwargs
+    )
+
+
+class BaseLogger:
+    pass
+
+
 # TODO(Alex | 13.07.2022) inherit from more sophisticated logger
-class RedneckLogger:
-    def __init__(self, output_folder=None):
+class RedneckLogger(BaseLogger):
+    def __init__(self, output_folder=None, retry_print=True):
 
         warnings.showwarning = self.get_warning_wrapper()
 
@@ -196,6 +232,8 @@ class RedneckLogger:
             self.output_folder = None
             self.stdout_file = None
             self.stderr_file = None
+
+        self.retry_print = retry_print
 
         self.cache = {}
         self.csv_output = None
@@ -360,7 +398,7 @@ class RedneckLogger:
         carriage_return=False
     ):
 
-        self.logger_output(
+        self.print_output(
             msg,
             LOG_PREFIX,
             prefix_style_code=make_string_style(
@@ -389,7 +427,7 @@ class RedneckLogger:
             PURPLE_COLOR_CODE
         )
 
-        self.logger_output(
+        self.print_output(
             msg,
             INFO_PREFIX,
             prefix_style_code=info_style_code,
@@ -407,7 +445,7 @@ class RedneckLogger:
         carriage_return=False
     ):
 
-        self.logger_output(
+        self.print_output(
             msg,
             ERROR_PREFIX,
             prefix_style_code=make_string_style(
@@ -424,7 +462,20 @@ class RedneckLogger:
             carriage_return=carriage_return
         )
 
-    def logger_output(
+    def print_output(self, *args, **kwargs):
+        if self.retry_print:
+            self.print_output_with_retries(*args, **kwargs)
+        else:
+            self._print_output(*args, **kwargs)
+
+    @retrier_factory_with_auto_logger()
+    def print_output_with_retries(
+        self,
+        *args, **kwargs
+    ):
+        self._print_output(*args, **kwargs)
+
+    def _print_output(
         self,
         msg,
         prefix_keyword,
@@ -435,6 +486,7 @@ class RedneckLogger:
         auto_newline=False,
         carriage_return=False
     ):
+
         msg_prefix = "{} {}".format(
             get_current_time(),
             prefix_keyword
@@ -698,7 +750,8 @@ def redneck_logger_context(
     log_folder,
     logger=None,
     exp_name="Default experiment",
-    start_time=None
+    start_time=None,
+    config_to_log_in_wandb=None
 ):
     if start_time is None:
         start_time = get_current_time()
@@ -738,6 +791,7 @@ def redneck_logger_context(
             os.path.dirname(logger.stdout_file)
         )
 
+    # set up google drive sync
     if logging_config[GDRIVE_FOLDER_KEY] is not None:
         logger.create_logs_on_gdrive(
             logging_config[GDRIVE_FOLDER_KEY]
@@ -755,46 +809,32 @@ def redneck_logger_context(
             logger.remote_stderr_url
         )
 
-    # enter tb context if exists
     use_tb = logging_config["use_tb"]
+    tb_log_dir = None
     tb_upload = False
-
-    # init tb run if exists
     if use_tb:
-        tb_config = logging_config["tb"]
-        tb_upload = tb_config["upload_online"]
-        assert_tb_credentials(tb_config["credentials_path"])
-
         tb_log_dir = os.path.join(
             log_folder,
             TB_LOG_FOLDER
         )
 
-        logger.tb_run = SummaryWriter(tb_log_dir)
-
-        tb_process_spawner = prepare_factory_without_args(
-            run_tb_folder_listener,
-            log_folder=log_folder,
-            exp_name=exp_name,
-            description=(
-                "Run path: {}".format(
-                    log_folder
-                )
-            )
-        )
     use_wandb = logging_config["use_wandb"]
     # init wandb_run if exists
     if use_wandb:
+        wandb_config = logging_config["wandb"]
         wandb_dir = os.path.join(
             get_system_root_path(),
             "tmp",
             f"wandb_{get_hostname()}_{os.getpid()}"
         )
         os.makedirs(wandb_dir, exist_ok=True)
+        if use_tb and wandb_config.get("sync_tb", False):
+            wandb.tensorboard.patch(root_logdir=tb_log_dir, pytorch=True)
         logger.wandb_run = init_wandb_run(
-            logging_config["wandb"],
+            wandb_config,
             exp_name,
             wandb_dir=wandb_dir,
+            config=config_to_log_in_wandb,
             logger=logger
         )
         # extract wandb link
@@ -808,6 +848,26 @@ def redneck_logger_context(
             "WandB url: {}".format(wandb_url)
         )
 
+    # init tb run if exists
+    if use_tb:
+        tb_config = logging_config["tb"]
+        tb_upload = tb_config["upload_online"]
+        assert_tb_credentials(tb_config["credentials_path"])
+        assert tb_log_dir is not None
+
+        logger.tb_run = SummaryWriter(tb_log_dir)
+
+        tb_process_spawner = prepare_factory_without_args(
+            run_tb_folder_listener,
+            log_folder=log_folder,
+            exp_name=exp_name,
+            description=(
+                "Run path: {}".format(
+                    log_folder
+                )
+            )
+        )
+
     # tell that logger is created
     logger.log("Logger context initialized!")
     try_to_sync_csv_with_remote(logger)
@@ -818,14 +878,20 @@ def redneck_logger_context(
         logger.tb_run.close()
 
         if tb_upload:
-
+            logger.log("Making sure that tensorboard folder is synced.")
             tb_log_folder_still_updating = folder_still_has_updates(
                 tb_log_dir,
                 MAX_TIME_BETWEEN_TB_LOG_UPDATES,
                 MAX_TIME_TO_WAIT_FOR_TB_TO_SAVE_DATA,
                 check_time=None
             )
-            if tb_log_folder_still_updating:
+            if tb_log_folder_still_updating is None:
+                logger.error(
+                    f"Failed to start watchdog folder observer "
+                    f"for tensorboard log folder."
+                    f"Most probably: \"[Errno 28] inotify watch limit reached\""
+                )
+            elif tb_log_folder_still_updating:
                 logger.error(
                     f"Tensorboard was updating {tb_log_dir} "
                     f"longer than {MAX_TIME_TO_WAIT_FOR_TB_TO_SAVE_DATA} "
@@ -1109,7 +1175,10 @@ class GspreadClient:
         @retrier_factory(self.logger)
         def create_client(gspread_credentials):
 
-            _, auth_user_filename = make_google_auth(gspread_credentials)
+            _, auth_user_filename = make_google_auth(
+                gspread_credentials,
+                logger=self.logger
+            )
             return gspread.oauth(
                 credentials_filename=gspread_credentials,
                 authorized_user_filename=auth_user_filename
@@ -1324,10 +1393,19 @@ def extract_csv_name_from_path(csv_file_path):
     return os.path.basename(csv_file_path).replace(".csv", '')
 
 
-def init_wandb_run(wandb_config, exp_name, wandb_dir, logger):
+def init_wandb_run(wandb_config, exp_name, wandb_dir, config, logger):
 
-    @retrier_factory(logger, max_retries=WANDB_INIT_RETRIES)
-    def init_wandb_run_for_given_logger(wandb_config, exp_name, wandb_dir):
+    @retrier_factory(
+        logger,
+        max_retries=WANDB_INIT_RETRIES,
+        sleep_time=WANDB_SLEEP_BETWEEN_INIT_RETRIES
+    )
+    def init_wandb_run_for_given_logger(
+        wandb_config,
+        exp_name,
+        wandb_dir,
+        config
+    ):
         wandb_password = get_value_from_config(
             wandb_config["netrc_path"],
             "password"
@@ -1342,10 +1420,17 @@ def init_wandb_run(wandb_config, exp_name, wandb_dir, logger):
         return wandb.init(
             project=exp_name,
             dir=wandb_dir,
-            settings=settings
+            settings=settings,
+            sync_tensorboard=wandb_config.get("sync_tb", False),
+            config=config
         )
 
-    return init_wandb_run_for_given_logger(wandb_config, exp_name, wandb_dir)
+    return init_wandb_run_for_given_logger(
+        wandb_config,
+        exp_name,
+        wandb_dir,
+        config
+    )
 
 
 class GdriveClient:
@@ -1414,8 +1499,14 @@ def make_gdrive_client(
 def make_google_auth(
     credentials_json,
     auth_user_json_path=DEFAULT_REFRESH_GOOGLE_CREDENTIALS,
-    scopes=DEFAULT_GOOGLE_SCOPES
+    scopes=DEFAULT_GOOGLE_SCOPES,
+    logger=None
 ):
+
+    def do_gauth(settings):
+        gauth = GoogleAuth(settings=settings)
+        gauth.CommandLineAuth()
+        return gauth
 
     credentials = read_json(credentials_json)["installed"]
 
@@ -1432,8 +1523,15 @@ def make_google_auth(
         "oauth_scope": scopes
     }
 
-    gauth = GoogleAuth(settings=settings)
-    gauth.CommandLineAuth()
+    try:
+        gauth = do_gauth(settings)
+    except RefreshError:
+        log_or_print(
+            "GAUTH token needs to be refreshed. Removing old one.",
+            logger
+        )
+        remove_file_or_folder(auth_user_json_path)
+        gauth = do_gauth(settings)
 
     return gauth, auth_user_json_path
 
@@ -1502,3 +1600,30 @@ def log_csv_for_concurrent(
             ),
             value
         )
+
+
+class RedneckProgressBar:
+
+    def __init__(self, total_steps, description="", logger=None):
+        self.logger = logger
+        self.description = description
+        self.total_steps = total_steps
+        self.current_step = 0
+
+    def update(self):
+        self.current_step += 1
+        if self.logger is None:
+            print(
+                f"{self.description}: "
+                f"{self.current_step}/{self.total_steps}"
+            )
+        else:
+            self.logger.progress(
+                self.description,
+                self.current_step,
+                self.total_steps
+            )
+
+
+def make_progress_bar(total_steps, description="", logger=None):
+    return RedneckProgressBar(total_steps, description, logger)
