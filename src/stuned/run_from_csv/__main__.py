@@ -1,11 +1,12 @@
 import argparse
 import os
+import sys
 import copy
+import contextlib
 from tempfile import NamedTemporaryFile
 import subprocess
 import shutil
-import sys
-import multiprocessing as mp
+import pydrive2
 
 
 # local modules
@@ -22,39 +23,51 @@ from utility.utils import (
     read_csv_as_dict,
     normalize_path,
     check_duplicates,
+    itself_and_lower_upper_case,
     expand_csv,
     retrier_factory
 )
-from utility.configs import (
+from utility.helpers_for_main import (
     AUTOGEN_PREFIX,
-    NESTED_CONFIG_KEY_SEPARATOR,
     make_csv_config
 )
 from utility.logger import (
     STATUS_CSV_COLUMN,
     SUBMITTED_STATUS,
-    WHETHER_TO_RUN_COLUMN,
-    DELTA_PREFIX,
-    SLURM_PREFIX,
-    PREFIX_SEPARATOR,
-    PLACEHOLDERS_FOR_DEFAULT,
     make_logger,
+    make_gspread_client,
     make_gdrive_client,
     sync_local_file_with_gdrive,
-    log_csv_for_concurrent,
-    fetch_csv,
-    try_to_upload_csv,
-    make_delta_column_name
+    log_csv_for_concurrent
 )
 
 
+SPREADSHEETS_URL = "https://docs.google.com/spreadsheets"
 FILES_URL = "https://drive.google.com/file"
+WORKSHEET_SEPARATOR = "::"
+DEFAULT_CSV_FOLDER = os.path.join(
+    get_project_root_path(),
+    "inputs"
+)
+DEFAULT_CONFIGS_FOLDER = os.path.join(
+    get_project_root_path(),
+    "experiment_configs"
+)
 
 
 USE_SRUN = False
 
 
+DEFAULT_LOG_FILE_PATH = os.path.join(
+    get_project_root_path(),
+    "tmp",
+    "tmp_log_for_run_from_csv.out"
+)
+
+
+NESTED_CONFIG_KEY_SEPARATOR = '/'
 PATH_TO_DEFAULT_CONFIG_COLUMN = "path_to_default_config"
+WHETHER_TO_RUN_COLUMN = "whether_to_run"
 MAIN_PATH_COLUMN = "path_to_main"
 DEV_NULL = "/dev/null"
 DEFAULT_SLURM_ARGS_DICT = {
@@ -63,14 +76,26 @@ DEFAULT_SLURM_ARGS_DICT = {
     "time": "02:00:00",
     "ntasks": 1,
     "cpus-per-task": 2,
-    "error": DEV_NULL,
-    "output": DEV_NULL
+    "error": DEFAULT_LOG_FILE_PATH,
+    "output": DEFAULT_LOG_FILE_PATH
 }
+EXEC_PATH = os.path.join(
+    get_project_root_path(),
+    "src",
+    "train_eval",
+    "main.py"
+)
 EMPTY_STRING = "EMPTY_STRING"
+PLACEHOLDERS_FOR_DEFAULT = itself_and_lower_upper_case("Default")
 EXPANDED_CSV_PREFIX = "expanded_"
+TO_RUN = "to_run"
+TO_SKIP = "to_skip"
+assert TO_RUN != TO_SKIP
+DELTA_PREFIX = "delta"
+SLURM_PREFIX = "slurm"
+PREFIX_SEPARATOR = ":"
 CURRENT_ROW_PLACEHOLDER = "__ROW__"
 CURRENT_WORKSHEET_PLACEHOLDER = "__WORKSHEET__"
-MAX_PROCESSES = 16
 
 
 def parse_args():
@@ -99,7 +124,7 @@ def parse_args():
         "--log_file_path",
         type=str,
         required=False,
-        default=get_default_log_file_path(),
+        default=DEFAULT_LOG_FILE_PATH,
         help="default path for the log file"
     )
     parser.add_argument(
@@ -110,158 +135,129 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_default_log_file_path():
-    return os.path.join(
-        get_project_root_path(),
-        "tmp",
-        "tmp_log_for_run_from_csv.out"
-    )
-
-
-def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
-
-    if make_final_cmd is None:
-        make_final_cmd = make_final_cmd_slurm
-
+def main():
     args = parse_args()
 
     logger = make_logger()
 
-    csv_path_or_url = args.csv_path
-
-    logger.log(f"Fetching csv from: {csv_path_or_url}")
     csv_path, spreadsheet_url, worksheet_name, gspread_client = fetch_csv(
-        csv_path_or_url,
+        args.csv_path,
+        args.expand,
         logger
     )
 
-    if args.expand:
-        expand_gsheet(csv_path, spreadsheet_url, worksheet_name, gspread_client)
-
     inputs_csv = read_csv_as_dict(csv_path)
-
-    with mp.Manager() as shared_memory_manager:
-
-        lock = shared_memory_manager.Lock()
-        current_step = shared_memory_manager.Value("int", 0)
-        shared_rows_to_run = shared_memory_manager.list()
-        shared_csv_updates = shared_memory_manager.list()
-        shared_default_config_paths = shared_memory_manager.dict()
-
-        starmap_args_for_row_processing = [
-            (
-                make_final_cmd,
-                csv_row,
-                row_number,
-                csv_path,
-                args.conda_env,
-                args.run_locally,
-                args.log_file_path,
-                spreadsheet_url,
-                worksheet_name,
-                logger,
-                lock,
-                shared_rows_to_run,
-                shared_default_config_paths,
-                shared_csv_updates,
-                current_step,
-                len(inputs_csv)
-            )
-                for row_number, csv_row in inputs_csv.items()
-        ]
-
-        if len(starmap_args_for_row_processing):
-
-            first_csv_row = starmap_args_for_row_processing[0][1]
-            check_csv_column_names(first_csv_row, allowed_prefixes)
-
-            pool_size = get_pool_size(len(starmap_args_for_row_processing))
-
-            upload_csv = False
-
-            with mp.Pool(pool_size) as pool:
-
-                pool.starmap(
-                    process_csv_row,
-                    starmap_args_for_row_processing
-                )
-
-                if len(shared_rows_to_run):
-
-                    assert 2 * len(shared_rows_to_run) == len(shared_csv_updates)
-
-                    concurrent_log_func = retrier_factory()(log_csv_for_concurrent)
-
-                    concurrent_log_func(
-                        csv_path,
-                        shared_csv_updates
-                    )
-
-                    os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
-
-                    starmap_args_for_job_submitting = [
-                        (
-                            run_cmd,
-                            args.log_file_path
-                        )
-                            for run_cmd in shared_rows_to_run
-                    ]
-
-                    pool.starmap(
-                        submit_job,
-                        starmap_args_for_job_submitting
-                    )
-                    upload_csv = True
-
-            if upload_csv:
-                try_to_upload_csv(
-                    csv_path,
-                    spreadsheet_url,
-                    worksheet_name,
-                    gspread_client
-                )
-
-
-def get_pool_size(iterable_len):
-    return min(
-        min(
-            max(1, mp.cpu_count() - 1),
-            iterable_len
-        ),
-        MAX_PROCESSES
-    )
-
-
-def submit_job(run_cmd, log_file_path):
-    with open(log_file_path, 'w+') as log_file:
-        subprocess.call(
-            run_cmd,
-            stdout=log_file,
-            stderr=log_file,
-            shell=True
+    rows_to_run = []
+    for row_number, csv_row in inputs_csv.items():
+        whether_to_run, run_cmd = process_csv_row(
+            csv_row,
+            row_number,
+            csv_path,
+            args.conda_env,
+            args.run_locally,
+            args.log_file_path,
+            spreadsheet_url,
+            worksheet_name,
+            logger
         )
-
-
-def expand_gsheet(csv_path, spreadsheet_url, worksheet_name, gspread_client):
-
-    expanded_csv_path = os.path.join(
-        os.path.dirname(csv_path),
-        EXPANDED_CSV_PREFIX + os.path.basename(csv_path)
-    )
-    expand_csv(
+        if whether_to_run == TO_RUN:
+            rows_to_run.append((row_number, run_cmd))
+    concurrent_log_func = retrier_factory()(log_csv_for_concurrent)
+    concurrent_log_func(
         csv_path,
-        expanded_csv_path
+        [
+            (row_number, STATUS_CSV_COLUMN, SUBMITTED_STATUS)
+                for row_number, _ in rows_to_run
+        ]
     )
-    csv_path = expanded_csv_path
-    if worksheet_name is not None:
-        worksheet_name = EXPANDED_CSV_PREFIX + worksheet_name
 
-    try_to_upload_csv(
+    with open(args.log_file_path, 'w+') as log_file:
+        for row_number, run_cmd in rows_to_run:
+
+            subprocess.call(
+                run_cmd,
+                stdout=log_file,
+                stderr=log_file,
+                shell=True
+            )
+
+    try_to_upload_csvs(
         csv_path,
         spreadsheet_url,
         worksheet_name,
         gspread_client
     )
+
+
+def fetch_csv(
+    csv_path,
+    to_expand,
+    logger
+):
+
+    spreadsheet_url = None
+    worksheet_name = None
+    gspread_client = None
+
+    if SPREADSHEETS_URL in csv_path:
+        if WORKSHEET_SEPARATOR in csv_path:
+            csv_path_split = csv_path.split(WORKSHEET_SEPARATOR)
+            assert len(csv_path_split) == 2
+            spreadsheet_url = csv_path_split[0]
+            worksheet_name = csv_path_split[1]
+            worksheet_names = [worksheet_name]
+        else:
+            spreadsheet_url = csv_path
+            worksheet_names = None
+
+        gspread_client = make_gspread_client(logger)
+
+        csv_paths = gspread_client.download_spreadsheet_as_csv(
+            spreadsheet_url,
+            os.path.join(
+                DEFAULT_CSV_FOLDER,
+                spreadsheet_url.split("edit#gid")[0].replace(os.sep, "(slash)")
+            ),
+            worksheet_names=worksheet_names
+        )
+        assert len(csv_paths) == 1
+        csv_path = csv_paths[0]
+
+    if to_expand:
+        expanded_csv = os.path.join(
+            os.path.dirname(csv_path),
+            EXPANDED_CSV_PREFIX + os.path.basename(csv_path)
+        )
+        expand_csv(
+            csv_path,
+            expanded_csv
+        )
+        csv_path = expanded_csv
+        if worksheet_name is not None:
+            worksheet_name = EXPANDED_CSV_PREFIX + worksheet_name
+
+        try_to_upload_csvs(
+            csv_path,
+            spreadsheet_url,
+            worksheet_name,
+            gspread_client
+        )
+
+    return csv_path, spreadsheet_url, worksheet_name, gspread_client
+
+
+def try_to_upload_csvs(
+    csv_path,
+    spreadsheet_url,
+    worksheet_name,
+    gspread_client
+):
+    if gspread_client is not None:
+        gspread_client.upload_csvs_to_spreadsheet(
+            spreadsheet_url,
+            csv_files=[csv_path],
+            worksheet_names=[worksheet_name]
+        )
 
 
 def fetch_default_config_path(path, logger):
@@ -279,31 +275,20 @@ def fetch_default_config_path(path, logger):
                 download=True,
                 logger=logger
             )
-
             file_path = os.path.join(
-                get_default_configs_folder(),
+                DEFAULT_CONFIGS_FOLDER,
                 remote_file["title"].split('.')[0],
-                f"default_config.yaml"
+                "config.yaml"
             )
-
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             shutil.move(tmp_file.name, file_path)
-
-        return file_path
+            return file_path
 
     else:
         return normalize_path(path)
 
 
-def get_default_configs_folder():
-    return os.path.join(
-        get_project_root_path(),
-        "experiment_configs"
-    )
-
-
 def process_csv_row(
-    make_final_cmd,
     csv_row,
     row_number,
     input_csv_path,
@@ -312,136 +297,94 @@ def process_csv_row(
     log_file_path,
     spreadsheet_url,
     worksheet_name,
-    logger,
-    lock,
-    shared_rows_to_run,
-    shared_default_config_paths,
-    shared_csv_updates,
-    current_step,
-    total_rows
+    logger
 ):
 
-    final_cmd = None
+    def check_csv_row(csv_row):
 
-    whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
+        assert MAIN_PATH_COLUMN in csv_row
+
+        assert WHETHER_TO_RUN_COLUMN in csv_row
+
+        assert PATH_TO_DEFAULT_CONFIG_COLUMN in csv_row
+
+        for key in csv_row.keys():
+            if PREFIX_SEPARATOR in key:
+                assert (
+                        DELTA_PREFIX in key
+                    or
+                        SLURM_PREFIX in key
+                ), \
+                f"Did not find \"{DELTA_PREFIX}\" " \
+                f"or \"{SLURM_PREFIX}\" in \"{key}\""
+
+    check_csv_row(csv_row)
+
+    replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
+    replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
 
     if (
-        whether_to_run.isnumeric()
-            and int(whether_to_run) != 0
+        not csv_row[WHETHER_TO_RUN_COLUMN].isnumeric()
+            or int(csv_row[WHETHER_TO_RUN_COLUMN]) == 0
     ):
+        return TO_SKIP, None
 
-        replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
-        replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
+    default_config_path = fetch_default_config_path(
+        csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN],
+        logger
+    )
 
-        default_config_path_or_url = csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN]
-        if not default_config_path_or_url in shared_default_config_paths:
-            with lock:
-                default_config_path = fetch_default_config_path(
-                    default_config_path_or_url,
-                    logger
-                )
-                shared_default_config_paths[default_config_path_or_url] \
-                    = default_config_path
-        else:
-            default_config_path \
-                = shared_default_config_paths[default_config_path_or_url]
+    assert os.path.exists(default_config_path)
 
-        assert os.path.exists(default_config_path)
+    exp_dir = normalize_path(os.path.dirname(default_config_path))
+    exp_name = os.path.basename(exp_dir)
 
-        exp_dir = normalize_path(os.path.dirname(default_config_path))
-        exp_name = os.path.basename(exp_dir)
+    default_config = read_yaml(default_config_path)
 
-        default_config = read_yaml(default_config_path)
+    _, new_config_path = make_new_config(
+        csv_row,
+        row_number,
+        input_csv_path,
+        default_config,
+        exp_dir,
+        spreadsheet_url,
+        worksheet_name
+    )
 
-        _, new_config_path = make_new_config(
-            csv_row,
-            row_number,
-            input_csv_path,
-            default_config,
-            exp_dir,
-            spreadsheet_url,
-            worksheet_name
-        )
+    cmd_as_string = make_task_cmd(
+        new_config_path,
+        conda_env,
+        normalize_path(csv_row[MAIN_PATH_COLUMN])
+    )
 
-        cmd_as_string = make_task_cmd(
-            new_config_path,
-            conda_env,
-            normalize_path(csv_row[MAIN_PATH_COLUMN])
-        )
+    os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
 
-        log_folder = os.path.dirname(log_file_path)
-        if not os.path.exists(log_folder):
-            with lock:
-                os.makedirs(log_folder, exist_ok=True)
-
+    with (
+        NamedTemporaryFile('w', delete=False)
+            if not (run_locally or USE_SRUN)
+            else contextlib.nullcontext()
+    ) as tmp_file:
         if run_locally:
             final_cmd = "{} &> {} &".format(cmd_as_string, log_file_path)
         else:
-            final_cmd = make_final_cmd(
-                csv_row,
-                exp_name,
-                log_file_path,
-                cmd_as_string
-            )
+            slurm_args_dict = make_slurm_args_dict(csv_row, exp_name)
+            if USE_SRUN:
+                slurm_args_as_string = " ".join(
+                    [
+                        f"--{flag}={value}"
+                            for flag, value
+                                in slurm_args_dict.items()
+                    ]
+                )
+                final_cmd = "srun {} sh -c \"{}\" &".format(
+                    slurm_args_as_string,
+                    cmd_as_string
+                )
+            else:
+                fill_sbatch_script(tmp_file, slurm_args_dict, cmd_as_string)
+                final_cmd = "sbatch {}".format(tmp_file.name)
 
-    if final_cmd is not None:
-
-        shared_csv_updates.append((row_number, STATUS_CSV_COLUMN, SUBMITTED_STATUS))
-        shared_csv_updates.append((row_number, WHETHER_TO_RUN_COLUMN, "0"))
-        shared_rows_to_run.append(final_cmd)
-
-    with lock:
-        current_step.value += 1
-        logger.progress(
-            "Rows processing.",
-            current_step.value,
-            total_rows
-        )
-
-
-def make_final_cmd_slurm(csv_row, exp_name, log_file_path, cmd_as_string):
-
-    slurm_args_dict = make_slurm_args_dict(
-        csv_row,
-        exp_name,
-        log_file_path
-    )
-    if USE_SRUN:
-        slurm_args_as_string = " ".join(
-            [
-                f"--{flag}={value}"
-                    for flag, value
-                        in slurm_args_dict.items()
-            ]
-        )
-        final_cmd = "srun {} sh -c \"{}\" &".format(
-            slurm_args_as_string,
-            cmd_as_string
-        )
-    else:
-        with (NamedTemporaryFile('w', delete=False)) as tmp_file:
-            fill_sbatch_script(tmp_file, slurm_args_dict, cmd_as_string)
-            final_cmd = "sbatch {}".format(tmp_file.name)
-
-    return final_cmd
-
-
-def check_csv_column_names(csv_row, allowed_prefixes):
-
-    assert MAIN_PATH_COLUMN in csv_row
-
-    assert WHETHER_TO_RUN_COLUMN in csv_row
-
-    assert PATH_TO_DEFAULT_CONFIG_COLUMN in csv_row
-
-    for i, key in enumerate(csv_row.keys()):
-        assert key is not None, \
-            f"Column {i} has empty column name. " \
-            f"Or some table entries contain commas."
-        if PREFIX_SEPARATOR in key:
-            assert any([prefix in key for prefix in allowed_prefixes]), \
-                f"\"{key}\" does not contain any of allowed prefixes " \
-                f"from:\n{allowed_prefixes}\n"
+    return TO_RUN, final_cmd
 
 
 def fill_sbatch_script(sbatch_file, slurm_args_dict, command):
@@ -467,19 +410,22 @@ def make_new_config(
 
     deltas = extract_from_csv_row_by_prefix(
         csv_row,
-        DELTA_PREFIX + PREFIX_SEPARATOR,
-        ignore_values=PLACEHOLDERS_FOR_DEFAULT
+        DELTA_PREFIX + PREFIX_SEPARATOR
     )
 
-    if len(deltas) > 0:
-        check_duplicates(list(deltas.keys()))
+    check_duplicates(list(deltas.keys()))
 
-    for key in deltas.keys():
-        value = deltas[key]
+    keys_to_pop = []
+    for key, value in deltas.items():
         if value == EMPTY_STRING:
             deltas[key] = ""
+        if value in PLACEHOLDERS_FOR_DEFAULT:
+            keys_to_pop.append(key)
         elif value == "":
-            raise Exception(f"Empty value for {make_delta_column_name(key)}")
+            raise Exception("Empty value for delta:{}".format(key))
+
+    for key in keys_to_pop:
+        deltas.pop(key)
 
     decode_strings_in_dict(
         deltas,
@@ -523,31 +469,29 @@ def make_task_cmd(new_config_path, conda_env, exec_path):
     )
 
 
-def make_slurm_args_dict(csv_row, exp_name, log_file):
+def make_slurm_args_dict(csv_row, exp_name):
+
+    specified_slurm_args = extract_from_csv_row_by_prefix(
+        csv_row,
+        SLURM_PREFIX + PREFIX_SEPARATOR
+    )
 
     all_slurm_args_dict = copy.deepcopy(DEFAULT_SLURM_ARGS_DICT)
 
     all_slurm_args_dict["job-name"] = exp_name
 
-    all_slurm_args_dict["output"] = log_file
-    all_slurm_args_dict["error"] = log_file
-
-    specified_slurm_args = extract_from_csv_row_by_prefix(
-        csv_row,
-        SLURM_PREFIX + PREFIX_SEPARATOR,
-        ignore_values=PLACEHOLDERS_FOR_DEFAULT
-    )
-
-    all_slurm_args_dict |= specified_slurm_args
-
     os.makedirs(os.path.dirname(all_slurm_args_dict["output"]), exist_ok=True)
     os.makedirs(os.path.dirname(all_slurm_args_dict["error"]), exist_ok=True)
+
+    for flag, value in specified_slurm_args.items():
+        if not value in PLACEHOLDERS_FOR_DEFAULT:
+            # override slurm args if given
+            all_slurm_args_dict[flag] = value
 
     return all_slurm_args_dict
 
 
-def extract_from_csv_row_by_prefix(csv_row, prefix, ignore_values):
-
+def extract_from_csv_row_by_prefix(csv_row, prefix):
     prefix_len = len(prefix)
     result = {}
     for key, value in csv_row.items():
@@ -557,15 +501,8 @@ def extract_from_csv_row_by_prefix(csv_row, prefix, ignore_values):
                 f"Found \"{prefix}\" (nothing after this prefix) "
                 f"in csv_row:\n{csv_row}"
             )
-        if (
-                len(key) > prefix_len
-            and
-                prefix == key[:prefix_len]
-            and
-                not value in ignore_values
-        ):
+        if len(key) > prefix_len and prefix == key[:prefix_len]:
             result[key[prefix_len:]] = value
-
     return result
 
 

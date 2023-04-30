@@ -26,7 +26,6 @@ import contextlib
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import importlib
-import matplotlib.pyplot as plt
 
 
 DEFAULT_HASH_SIZE = 10
@@ -57,13 +56,9 @@ SYSTEM_PLATFORM = platform.system().lower()
 
 LIST_START_SYMBOL = '['
 LIST_END_SYMBOL = ']'
-
-
-# matplotlib
-PLT_ROW_SIZE = 4
-PLT_COL_SIZE = 4
-PLT_PLOT_HEIGHT = 5
-PLT_PLOT_WIDTH = 5
+DELIMETER = ','
+QUOTE_CHAR = '\"'
+ESCAPE_CHAR = '\\'
 
 
 def read_yaml(yaml_file):
@@ -234,7 +229,7 @@ def get_model_device(model):
     return next(model.parameters()).device
 
 
-def get_stuned_root_path():
+def get_project_root_path():
     return os.path.abspath(
         os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -252,7 +247,7 @@ def make_unique_run_name(hashed_config_diff):
 
 def get_current_run_folder(experiment_name, hashed_config_diff):
     return os.path.join(
-        get_stuned_root_path(),
+        get_project_root_path(),
         DEFAULT_EXPERIMENTS_FOLDER,
         experiment_name,
         make_unique_run_name(hashed_config_diff)
@@ -705,10 +700,11 @@ def write_into_csv_with_column_names(
     row_number,
     column_name,
     value,
-    delimiter=',',
-    quotechar=None,
-    quoting=csv.QUOTE_NONE,
-    escapechar='\\',
+    delimiter=DELIMETER,
+    quotechar=QUOTE_CHAR,
+    quoting=csv.QUOTE_MINIMAL,
+    escapechar=ESCAPE_CHAR,
+    doublequote=False,
     replace_nulls=False,
     append_row=False,
     use_lock=True
@@ -759,14 +755,16 @@ def write_into_csv_with_column_names(
                 delimiter=delimiter,
                 quotechar=quotechar,
                 quoting=quoting,
-                escapechar=escapechar
+                escapechar=escapechar,
+                doublequote=doublequote
             )
             writer = csv.writer(
                 tempfile,
                 delimiter=delimiter,
                 quotechar=quotechar,
                 quoting=quoting,
-                escapechar=escapechar
+                escapechar=escapechar,
+                doublequote=doublequote
             )
 
             appended_column = False
@@ -881,6 +879,9 @@ def decode_strings_in_dict(
 
         if isinstance(value, str):
 
+            if value == "":
+                continue
+
             value = decode_val_from_str(
                 value,
                 list_separators,
@@ -897,6 +898,9 @@ def decode_val_from_str(
     list_start_symbol='[',
     list_end_symbol=']'
 ):
+
+    if isinstance(value, str):
+        value = value.strip()
 
     if str_is_number(value):
 
@@ -931,9 +935,6 @@ def decode_val_from_str(
 
     elif value in itself_and_lower_upper_case("True"):
         value = True
-
-    if isinstance(value, str):
-        value = value.strip()
 
     return value
 
@@ -1032,7 +1033,14 @@ def parse_list_from_string(
         return result_list
 
 
-def read_csv_as_dict(csv_path, delimeter=',', quotechar='\"'):
+def read_csv_as_dict(
+    csv_path,
+    delimeter=DELIMETER,
+    quotechar=QUOTE_CHAR,
+    quoting=csv.QUOTE_MINIMAL,
+    escapechar=ESCAPE_CHAR,
+    doublequote=False
+):
 
     result = {}
 
@@ -1040,7 +1048,10 @@ def read_csv_as_dict(csv_path, delimeter=',', quotechar='\"'):
         csv_reader = csv.DictReader(
             input_csv,
             delimiter=delimeter,
-            quotechar=quotechar
+            quotechar=quotechar,
+            quoting=quoting,
+            escapechar=escapechar,
+            doublequote=doublequote
         )
 
         result[0] = {}
@@ -1054,7 +1065,7 @@ def read_csv_as_dict(csv_path, delimeter=',', quotechar='\"'):
     return result
 
 
-def normalize_path(path, current_dir):
+def normalize_path(path, current_dir=get_project_root_path()):
     if path is None:
         return None
     assert isinstance(path, str)
@@ -1184,12 +1195,27 @@ def retrier_factory(
     logger=None,
     final_func=raise_func,
     max_retries=DEFAULT_NUM_ATTEMTPS,
-    sleep_time=DEFAULT_SLEEP_TIME
+    sleep_time=DEFAULT_SLEEP_TIME,
+    infer_logger_from_args=None
 ):
+
+    assert (
+            logger != "auto" and infer_logger_from_args is None
+        or
+            logger == "auto" and infer_logger_from_args is not None
+    ), "Provide \"infer_logger_from_args\" iff \"logger == auto\""
 
     def retrier(func):
 
+        # without this line logger is not seen in wrapped_func
+        logger_in_retrier = logger
+
         def wrapped_func(*args, **kwargs):
+
+            logger = logger_in_retrier
+
+            if logger == "auto":
+                logger = infer_logger_from_args(*args, **kwargs)
 
             num_attempts = 0
             while True:
@@ -1199,16 +1225,26 @@ def retrier_factory(
                     if num_attempts >= max_retries:
                         return final_func(logger)
                     num_attempts += 1
-                    error_or_print(
-                        "{}\nRetrying {}: {}/{}.\n\n".format(
-                            traceback.format_exc(),
-                            func.__name__,
-                            num_attempts,
-                            max_retries
-                        ),
-                        logger
-                    )
                     time.sleep(sleep_time)
+                    retry_print = None
+                    if logger is not None and hasattr(logger, "retry_print"):
+                        retry_print = logger.retry_print
+                        logger.retry_print = False
+                    retrying_msg = "{}\nRetrying {}: {}/{}.\n\n".format(
+                        traceback.format_exc(),
+                        func.__name__,
+                        num_attempts,
+                        max_retries
+                    )
+                    try:
+                        error_or_print(
+                            retrying_msg,
+                            logger
+                        )
+                    except:
+                        print(retrying_msg)
+                    if retry_print is not None:
+                        logger.retry_print = retry_print
 
         return wrapped_func
 
@@ -1386,6 +1422,8 @@ def expand_csv(
         keys = list(row_as_dict.keys())
         for key in keys:
             value = row_as_dict[key]
+            if isinstance(value, str):
+                value = value.strip()
             if (
                 isinstance(value, str)
                     and len(value) >= 2
@@ -1428,7 +1466,7 @@ def expand_csv(
 
         return result
 
-    dict_to_expand = read_csv_as_dict(csv_to_expand, quotechar='\"')
+    dict_to_expand = read_csv_as_dict(csv_to_expand, quotechar=QUOTE_CHAR)
     expanded_dict = {}
     final_row_id = 0
 
@@ -1485,7 +1523,7 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
     Check every <check_time> seconds whether <path> had any updates (events).
     Observe the <path> for at most <max_time>.
     If there were no updates for <delta> seconds return True, otherwise return
-    False.
+    False. If watchdog observer failed to start return None.
     """
 
     if check_time is None:
@@ -1496,7 +1534,12 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
     event_handler = TimeStampEventHandler()
     observer = Observer()
     observer.schedule(event_handler, path, recursive=True)
-    observer.start()
+
+    try:
+        observer.start()
+    except:
+        return None
+
     has_events_bool = event_handler.has_events(delta)
     while has_events_bool and i < n:
         time.sleep(check_time)
@@ -1533,60 +1576,44 @@ def as_str_for_csv(value):
     return value
 
 
-def show_images(images, label_lists=None):
+def check_consistency(
+    first,
+    second,
+    first_consistent_group,
+    second_consistent_group
+):
+    def make_msg(
+        first,
+        first_consistent_group,
+        second,
+        second_consistent_group
+    ):
+        return (
+            "{} is from {}, therefore {} "
+            "should be from {}."
+        ).format(
+            first,
+            first_consistent_group,
+            second,
+            second_consistent_group
+        )
 
-    def remove_ticks_and_labels(subplot):
-        subplot.axes.xaxis.set_ticklabels([])
-        subplot.axes.yaxis.set_ticklabels([])
-        subplot.axes.xaxis.set_visible(False)
-        subplot.axes.yaxis.set_visible(False)
-
-    def get_row_cols(n):
-        n_rows = int(np.sqrt(n))
-        n_cols = int(n / n_rows)
-        if n % n_rows != 0:
-            n_cols += 1
-        return n_rows, n_cols
-
-    n = len(images)
-    assert n > 0
-    if label_lists is not None:
-        for label_list in label_lists.values():
-            assert len(label_list) == n
-
-    n_rows, n_cols = get_row_cols(n)
-
-    cmap = get_cmap(images[0])
-    fig = plt.figure(figsize=(n_cols * PLT_COL_SIZE, n_rows * PLT_ROW_SIZE))
-    for i in range(n):
-        subplot = fig.add_subplot(n_rows, n_cols, i + 1)
-        title = f'n{i}'
-        if label_lists is not None:
-            for label_name, label_list in label_lists.items():
-                title += f"\n{label_name}=\"{label_list[i]}\""
-        subplot.title.set_text(title)
-        remove_ticks_and_labels(subplot)
-
-        imshow(subplot, images[i], cmap=cmap)
-
-    plt.tight_layout()
-    plt.show()
-
-
-def imshow(plot, image, cmap=None, color_dim_first=True):
-    image = image.squeeze()
-    num_image_dims = len(image.shape)
-    if cmap is None:
-        cmap = get_cmap(image)
-    assert num_image_dims == 2 or num_image_dims == 3
-    if num_image_dims == 3 and color_dim_first:
-        image = np.transpose(image, (1, 2, 0))
-    plot.imshow(image, cmap=cmap)
-
-
-def get_cmap(image):
-    cmap = "viridis"
-    squeezed_shape = image.squeeze().shape
-    if len(squeezed_shape) == 2:
-        cmap = "gray"
-    return cmap
+    try:
+        if first in first_consistent_group:
+            exception_msg = make_msg(
+                first,
+                first_consistent_group,
+                second,
+                second_consistent_group
+            )
+            assert second in second_consistent_group
+        if second in second_consistent_group:
+            exception_msg = make_msg(
+                second,
+                second_consistent_group,
+                first,
+                first_consistent_group
+            )
+            assert first in first_consistent_group
+    except AssertionError as e:
+        raise Exception(exception_msg)
