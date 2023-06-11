@@ -15,7 +15,7 @@ def check_config_for_demo_experiment(config, config_path, logger):
     assert "initialization_type" in config
     assert "image" in config
 
-
+#
 def demo_experiment(
     experiment_config,
     logger,
