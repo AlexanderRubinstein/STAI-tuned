@@ -9,19 +9,20 @@ import requests
 import random
 import pickle
 import traceback
+import sys
+import os
+import torch
 from typing import (
     Union,
     Dict,
-    List,
-    Any,
-    Callable
+    List
 )
-import torch
 
 
 # local modules
-from ..utility.logger import make_logger
-from ..utility.utils import (
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from utility.logger import make_logger
+from utility.utils import (
     remove_filename_extension,
     remove_file_or_folder,
     remove_all_but_subdirs,
@@ -29,11 +30,14 @@ from ..utility.utils import (
     compute_file_hash,
     get_hash,
     log_or_print,
-    get_stuned_root_path,
+    get_project_root_path,
     prepare_for_pickling,
-    append_dict,
-    show_images
+    randomly_subsample_indices_uniformly,
+    deterministically_subsample_indices_uniformly,
+    show_images,
+    append_dict
 )
+sys.path.pop(0)
 
 
 CHECK_FILE_HASH = False
@@ -47,7 +51,12 @@ YANDEX_API_ENDPOINT = "https://cloud-api.yandex.net/v1/disk" \
 H5_EXTENSION = ".h5"
 
 
-DEFAULT_CACHE_PATH = os.path.join(get_stuned_root_path(), "cache")
+def make_default_cache_path():
+    return os.path.join(get_project_root_path(), "cache")
+
+
+def make_default_data_path():
+    return os.path.join(get_project_root_path(), "data")
 
 
 def fetch_data(
@@ -211,8 +220,16 @@ def assert_dataset_as_file(file_hash):
 
 
 def randomly_subsampled_dataloader(dataloader, num_samples, batch_size=None):
-
-    assert isinstance(dataloader, DataLoader)
+    dataloader_is_wrapper = False
+    wrapper = None
+    # TODO(Alex | 12.06.2023) make valid for DspritesDataloaderWrapper as well
+    if isinstance(dataloader, (WrappedDataloader)):
+        dataloader_is_wrapper = True
+        if isinstance(dataloader, WrappedDataloader):
+            wrapper = dataloader.wrapper
+        dataloader = dataloader.dataloader
+    else:
+        assert isinstance(dataloader, DataLoader)
 
     subsampled_indices = random.sample(
         list(range(len(dataloader.dataset))),
@@ -230,6 +247,15 @@ def randomly_subsampled_dataloader(dataloader, num_samples, batch_size=None):
         dataloader_init_args["batch_size"] = batch_size
 
     new_dataloader = DataLoader(**dataloader_init_args)
+
+    if dataloader_is_wrapper:
+        if wrapper is not None:
+            new_dataloader = WrappedDataloader(new_dataloader, wrapper=wrapper)
+        else:
+            raise Exception(
+                "Most likely DspritesDataloaderWrapper is used, "
+                "but it is not supported."
+            )
 
     return new_dataloader
 
@@ -264,18 +290,22 @@ def make_or_load_from_cache(
     load_func,
     cache_path,
     forward_cache_path,
-    logger=make_logger()
+    logger=make_logger(),
+    unique_hash=None
 ):
 
     if cache_path is None:
         cache_fullpath = None
     else:
+        # TODO(Alex | 04.05.2023) keep this after update
+        if unique_hash is None:
+            unique_hash = get_hash(object_config)
         os.makedirs(cache_path, exist_ok=True)
         cache_fullpath = os.path.join(
             cache_path,
             "{}_{}.pkl".format(
                 object_name,
-                get_hash(object_config)
+                unique_hash
             )
         )
 
@@ -338,6 +368,68 @@ def make_or_load_from_cache(
                 auto_newline=True
             )
     return result
+
+
+class WrappedDataloader:
+    def __init__(self, dataloader, wrapper):
+        self.dataloader = dataloader
+        self.dataset = self.dataloader.dataset
+        self.wrapper = wrapper
+
+    def __iter__(self):
+        return self.wrapper(iter(self.dataloader))
+
+    def __len__(self):
+        return len(self.dataloader)
+
+
+def wrap_dataloader(dataloader, wrapper):
+    return WrappedDataloader(dataloader, wrapper)
+
+
+def get_default_train_test_dataloaders(
+    dataset,
+    train_batch_size,
+    test_batch_size,
+    shuffle_train=True,
+    shuffle_test=False
+):
+
+    train_dataloader = None
+    test_dataloader = None
+
+    if train_batch_size > 0:
+        train_dataloader = DataLoader(
+            dataset,
+            shuffle=shuffle_train,
+            batch_size=train_batch_size
+        )
+
+    if test_batch_size > 0:
+        test_dataloader = DataLoader(
+            dataset,
+            shuffle=shuffle_test,
+            batch_size=test_batch_size
+        )
+
+    return train_dataloader, {"test": test_dataloader}
+
+
+def uniformly_subsample_dataset(dataset, num_samples, deterministic):
+    if num_samples > 0:
+        if deterministic:
+            indices \
+                = deterministically_subsample_indices_uniformly(
+                    len(dataset),
+                    num_samples
+                )
+        else:
+            indices = randomly_subsample_indices_uniformly(
+                len(dataset),
+                num_samples
+            )
+        dataset = torch.utils.data.Subset(dataset, indices)
+    return dataset
 
 
 def show_dataloader_first_batch(

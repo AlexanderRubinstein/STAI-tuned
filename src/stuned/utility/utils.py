@@ -26,6 +26,9 @@ import contextlib
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import importlib
+import io
+import re
+import matplotlib.pyplot as plt
 
 
 DEFAULT_HASH_SIZE = 10
@@ -39,8 +42,11 @@ TEST_ENV_NAME = os.environ["TEST_ENV"]
 BASHRC_PATH = os.path.join(os.environ["HOME"], ".bashrc")
 NEW_SHELL_INIT_COMMAND = "source {} && conda activate".format(BASHRC_PATH)
 FLOATING_POINT = "."
+PACKAGE_SEPARATOR = "."
 NAME_SEP = "_"
+NAME_NUMBER_SEPARATOR = '-'
 NULL_CONTEXT = contextlib.nullcontext()
+PROJECT_ROOT_ENV_NAME = "PROJECT_ROOT_PROVIDED_FOR_STUNED"
 
 
 DEFAULT_SLEEP_TIME = 10
@@ -59,6 +65,14 @@ LIST_END_SYMBOL = ']'
 DELIMETER = ','
 QUOTE_CHAR = '\"'
 ESCAPE_CHAR = '\\'
+INF = float("Inf")
+
+
+# matplotlib
+PLT_ROW_SIZE = 4
+PLT_COL_SIZE = 4
+PLT_PLOT_HEIGHT = 5
+PLT_PLOT_WIDTH = 5
 
 
 def read_yaml(yaml_file):
@@ -138,36 +152,61 @@ def check_element_in_iterable(
     element,
     element_name="element",
     iterable_name="iterable",
-    reference=None
+    reference=None,
+    raise_if_wrong=True
 ):
-    try:
-        assert element in iterable
-    except Exception as e:
-        exception_msg = "No {} \"{}\" in {}:\n{}".format(
-                element_name,
-                element,
-                iterable_name,
-                iterable
-            )
-        if reference is not None:
-            exception_msg += "\nFor:\n {}".format(reference)
-        raise Exception(exception_msg)
+    element_in_iterable = element in iterable
+    if raise_if_wrong:
+        try:
+            assert element_in_iterable
+        except Exception as e:
+            exception_msg = "No {} \"{}\" in {}:\n{}".format(
+                    element_name,
+                    element,
+                    iterable_name,
+                    iterable
+                )
+            if reference is not None:
+                exception_msg += "\nFor:\n {}".format(reference)
+            raise Exception(exception_msg)
+    return element_in_iterable
 
 
-def check_dict(dict, required_keys, optional_keys=[], check_reverse=False):
+def check_dict(
+    dict,
+    required_keys,
+    optional_keys=[],
+    check_reverse=False,
+    raise_if_wrong=True
+):
+
+    check_1 = False
+    check_2 = False
+
     for key in required_keys:
-        check_element_in_iterable(dict, key, "key", "dict")
-    if check_reverse:
+        check_1 = check_element_in_iterable(
+            dict,
+            key,
+            "key",
+            "dict",
+            raise_if_wrong=raise_if_wrong
+        )
+        if not check_1:
+            break
+    if check_1 and check_reverse:
         allowed_keys = set(required_keys + optional_keys)
         for key in dict.keys():
-            check_element_in_iterable(
+            check_2 = check_element_in_iterable(
                 allowed_keys,
                 key,
                 "key",
                 "set of allowed keys",
-                reference=dict
+                reference=dict,
+                raise_if_wrong=raise_if_wrong
             )
-
+            if not check_2:
+                break
+    return check_1 and check_2
 
 def runcmd(cmd, verbose=False, logger=None):
 
@@ -230,6 +269,15 @@ def get_model_device(model):
 
 
 def get_project_root_path():
+    if not PROJECT_ROOT_ENV_NAME in os.environ:
+        raise Exception(
+            f"STAI-tuned expects project root path "
+            f"in variable \"{PROJECT_ROOT_ENV_NAME}\""
+        )
+    return os.environ[PROJECT_ROOT_ENV_NAME]
+
+
+def get_stuned_root_path():
     return os.path.abspath(
         os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -277,9 +325,6 @@ def get_value_from_config(file_path, value_name):
         "File \"{}\" does not contain"
         " \"{}\".".format(file_path, value_name)
     )
-
-
-
 
 
 def get_checkpoint(experiment_config, logger=None):
@@ -356,9 +401,41 @@ def error_or_print(msg, logger=None, auto_newline=False):
         print(msg, file=sys.stderr)
 
 
-def read_checkpoint(checkpoint_path):
+def read_checkpoint(checkpoint_path, map_location=None):
+
+    class CPU_Unpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+            if module == 'torch.storage' and name == '_load_from_bytes':
+                return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
+            else: return super().find_class(module, name)
+
+    def do_read_checkpoint(file, map_location=None):
+
+        if map_location == "cpu" or map_location == torch.device(type='cpu'):
+            checkpoint = CPU_Unpickler(file).load()
+        else:
+            try:
+                checkpoint = torch.load(
+                    file,
+                    map_location=map_location
+                )
+            except:
+                checkpoint = pickle.load(file)
+
+        return checkpoint
+
     if os.path.exists(checkpoint_path):
-        checkpoint = pickle.load(open(checkpoint_path, "rb"))
+        file = open(checkpoint_path, "rb")
+        try:
+            checkpoint = do_read_checkpoint(
+                file,
+                map_location=map_location
+            )
+        except RuntimeError:
+            checkpoint = do_read_checkpoint(
+                file,
+                map_location='cpu'
+            )
     else:
         raise Exception(
             "Checkpoint path does not exist: {}".format(checkpoint_path)
@@ -404,7 +481,7 @@ def save_checkpoint(
         print(log_msg)
     for obj in checkpoint.values():
         prepare_for_pickling(obj)
-    pickle.dump(
+    torch.save(
         checkpoint,
         open(checkpoint_savepath, "wb")
     )
@@ -702,9 +779,9 @@ def write_into_csv_with_column_names(
     value,
     delimiter=DELIMETER,
     quotechar=QUOTE_CHAR,
-    quoting=csv.QUOTE_MINIMAL,
+    quoting=csv.QUOTE_NONE,
     escapechar=ESCAPE_CHAR,
-    doublequote=False,
+    doublequote=True,
     replace_nulls=False,
     append_row=False,
     use_lock=True
@@ -740,8 +817,6 @@ def write_into_csv_with_column_names(
     tempfile = NamedTemporaryFile('w+t', newline='', delete=False)
 
     lock = make_file_lock(file_path) if use_lock else NULL_CONTEXT
-
-    value = as_str_for_csv(value)
 
     with lock:
 
@@ -894,7 +969,7 @@ def decode_strings_in_dict(
 
 def decode_val_from_str(
     value,
-    list_separators=[' '],
+    list_separators=[' ', ', ', ','],
     list_start_symbol='[',
     list_end_symbol=']'
 ):
@@ -993,6 +1068,10 @@ def parse_float_or_int_from_string(value_as_str):
         return int(value_as_str)
 
 
+def escape_all_chars_in_string(input_string, escapechar=ESCAPE_CHAR):
+    return escapechar + escapechar.join(list(input_string))
+
+
 def parse_list_from_string(
     value_as_str,
     list_separators,
@@ -1019,6 +1098,12 @@ def parse_list_from_string(
             list_separators[0]
         )
 
+        value_as_str = re.sub(
+            f"({escape_all_chars_in_string(list_separators[0])})+",
+            list_separators[0],
+            value_as_str
+        )
+
         result_list = value_as_str.split(list_separators[0])
 
         for i in range(len(result_list)):
@@ -1037,9 +1122,9 @@ def read_csv_as_dict(
     csv_path,
     delimeter=DELIMETER,
     quotechar=QUOTE_CHAR,
-    quoting=csv.QUOTE_MINIMAL,
+    quoting=csv.QUOTE_NONE,
     escapechar=ESCAPE_CHAR,
-    doublequote=False
+    doublequote=True
 ):
 
     result = {}
@@ -1065,7 +1150,9 @@ def read_csv_as_dict(
     return result
 
 
-def normalize_path(path, current_dir=get_project_root_path()):
+def normalize_path(path, current_dir=None):
+    if current_dir is None:
+        current_dir = get_project_root_path()
     if path is None:
         return None
     assert isinstance(path, str)
@@ -1292,12 +1379,12 @@ def kill_processes(processes_to_kill, logger=None):
             error_or_print(traceback.format_exc(), logger)
 
 
-def read_old_checkpoint(checkpoint_path):
+def read_old_checkpoint(checkpoint_path, map_location=None):
     sys.path.insert(
         0,
         os.path.join(os.path.dirname(os.path.dirname(__file__)), "train_eval")
     )
-    checkpoint = read_checkpoint(checkpoint_path)
+    checkpoint = read_checkpoint(checkpoint_path, map_location=map_location)
     sys.path.pop(0)
     return checkpoint
 
@@ -1466,7 +1553,7 @@ def expand_csv(
 
         return result
 
-    dict_to_expand = read_csv_as_dict(csv_to_expand, quotechar=QUOTE_CHAR)
+    dict_to_expand = read_csv_as_dict(csv_to_expand)
     expanded_dict = {}
     final_row_id = 0
 
@@ -1553,26 +1640,37 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
 
 
 # https://github.com/CompVis/latent-diffusion/blob/a506df5756472e2ebaf9078affdde2c4f1502cd4/ldm/util.py#L88
-def import_from_string(string, reload=False):
-    if '.' in string:
-        module, cls = string.rsplit('.', 1)
-    else:
-        module = string
-        cls = None
+def import_from_string(string, reload=False, nested_attrs_depth=1):
+
+    module_path_and_attrs = string.rsplit(PACKAGE_SEPARATOR, nested_attrs_depth)
+
+    module_path = module_path_and_attrs[0]
+
+    nested_attrs = module_path_and_attrs[1:]
+
+    module = importlib.import_module(module_path)
+
     if reload:
-        module_imp = importlib.import_module(module)
-        importlib.reload(module_imp)
-    module_imp = importlib.import_module(module, package=None)
-    if cls is None:
-        return module_imp
-    else:
-        return getattr(module_imp, cls)
+        importlib.reload(module)
+
+    if len(nested_attrs) > 0:
+        module = get_nested_attr(
+            module,
+            nested_attrs
+        )
+
+    return module
 
 
-def as_str_for_csv(value):
+def as_str_for_csv(value, chars_to_remove=[]):
+
     if value is None:
         value = "None"
     value = str(value)
+
+    for char in chars_to_remove:
+        value = value.replace(char, '')
+
     return value
 
 
@@ -1617,3 +1715,86 @@ def check_consistency(
             assert first in first_consistent_group
     except AssertionError as e:
         raise Exception(exception_msg)
+
+
+def aggregate_tensors_by_func(input_list, func=torch.mean):
+    return func(
+        torch.stack(
+            input_list
+        )
+    )
+
+
+def func_for_dim(func, dim):
+
+    def inner_func(*args, **kwargs):
+        return func(*args, **kwargs, dim=dim)
+
+    return inner_func
+
+
+def parse_name_and_number(name_and_number, separator=NAME_NUMBER_SEPARATOR):
+    assert separator in name_and_number
+    split = name_and_number.split(separator)
+    assert len(split) == 2
+    assert is_number(split[-1])
+    return split[0], parse_float_or_int_from_string(split[-1])
+
+
+def show_images(images, label_lists=None):
+
+    def remove_ticks_and_labels(subplot):
+        subplot.axes.xaxis.set_ticklabels([])
+        subplot.axes.yaxis.set_ticklabels([])
+        subplot.axes.xaxis.set_visible(False)
+        subplot.axes.yaxis.set_visible(False)
+
+    def get_row_cols(n):
+        n_rows = int(np.sqrt(n))
+        n_cols = int(n / n_rows)
+        if n % n_rows != 0:
+            n_cols += 1
+        return n_rows, n_cols
+
+    n = len(images)
+    assert n > 0
+    if label_lists is not None:
+        for label_list in label_lists.values():
+            assert len(label_list) == n
+
+    n_rows, n_cols = get_row_cols(n)
+
+    cmap = get_cmap(images[0])
+    fig = plt.figure(figsize=(n_cols * PLT_COL_SIZE, n_rows * PLT_ROW_SIZE))
+    for i in range(n):
+        subplot = fig.add_subplot(n_rows, n_cols, i + 1)
+        title = f'n{i}'
+        if label_lists is not None:
+            for label_name, label_list in label_lists.items():
+                title += f"\n{label_name}=\"{label_list[i]}\""
+        subplot.title.set_text(title)
+        remove_ticks_and_labels(subplot)
+
+        imshow(subplot, images[i], cmap=cmap)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def imshow(plot, image, cmap=None, color_dim_first=True):
+    image = image.squeeze()
+    num_image_dims = len(image.shape)
+    if cmap is None:
+        cmap = get_cmap(image)
+    assert num_image_dims == 2 or num_image_dims == 3
+    if num_image_dims == 3 and color_dim_first:
+        image = np.transpose(image, (1, 2, 0))
+    plot.imshow(image, cmap=cmap)
+
+
+def get_cmap(image):
+    cmap = "viridis"
+    squeezed_shape = image.squeeze().shape
+    if len(squeezed_shape) == 2:
+        cmap = "gray"
+    return cmap

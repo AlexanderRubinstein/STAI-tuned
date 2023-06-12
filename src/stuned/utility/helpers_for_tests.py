@@ -1,16 +1,14 @@
 import sys
 import traceback
-import os
 import multiprocessing as mp
 
 
 # local modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utility.logger import (
+from .logger import (
     BaseLogger,
     make_logger
 )
-from utility.utils import (
+from .utils import (
     compute_dicts_diff,
     read_csv_as_dict
 )
