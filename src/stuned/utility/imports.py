@@ -10,10 +10,8 @@ class LazyModuleWrapper(ModuleType):
     def __init__(self, module_name):
         self.module_name = module_name
         self.module = None
-        spec = importlib.util.find_spec(self.module_name)
         self.default_attrs = {
-            "__spec__": spec,
-            "__name__": spec.name
+            "__spec__": importlib.util.find_spec(self.module_name)
         }
 
     def try_to_import(self):
@@ -30,10 +28,7 @@ class LazyModuleWrapper(ModuleType):
         if not is_bulitin_name(name):
             self.try_to_import()
 
-        if self.module is not None:
-            return getattr(self.module, name)
-
-        return None
+        return getattr(self.module, name)
 
 
 def is_bulitin_name(name):
