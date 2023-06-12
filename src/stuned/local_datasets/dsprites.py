@@ -5,44 +5,56 @@ import itertools
 import random
 from torchvision import transforms as T
 import pickle
+import sys
+import os
 
 
 # local modules
-from .utils import (
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from local_datasets.utils import (
     EMPTY_URL,
     fetch_data,
     assert_dataset_as_file,
     do_fetch_dataset_as_file,
     convert_dataset_to_tensor_generator,
     make_or_load_from_cache
-)
-from .base import BaseData
-from ..utility.logger import make_logger
-from ..utility.utils import (
+)  # slow
+from local_datasets.base import BaseData
+from utility.logger import make_logger
+from utility.utils import (
     raise_unknown,
     coefficients_for_bases,
     log_or_print,
     compute_proportion,
     deterministically_subsample_indices_uniformly,
-    get_stuned_root_path
+    get_project_root_path
 )
+from local_datasets.transforms import (
+    make_transforms
+)
+sys.path.pop(0)
 
 
 DSPRITES_ORIGINAL_URL = "https://disk.yandex.ru/d/v_FfJcdeNKQVNg"
 DSPRITES_BW_URL = "https://disk.yandex.ru/d/0BJBFes548cOhg"
+# if "dsprites_color.h5" is needed, it should be generated locally,
+# using scripts from the "hyp_bias" repo
+DSPRITES_COLOR_URL = EMPTY_URL
 DSPRITES_ORIGINAL_HASH = "7da33b31b13a06f4b04a70402ce90c2e"
 DSPRITES_BW_HASH = "322531291bed2d9f98049bae4e64d194"
-MAX_TOTAL_NUMBER_OF_DSPRITES_SAMPLES = 737280 * 3
-
-
-DEFAULT_DSPRITES_CONFIG = {
-    'type': "color",
-    'train_val_split': 1.0,
-    'path': os.path.join(get_stuned_root_path(), "data", "dsprites")
-}
+DSPRITES_COLOR_HASH = "ce1f3448066b87edada5460376289731"
 
 
 DSPRITES_NUM_COLORS = 3
+MAX_TOTAL_NUMBER_OF_DSPRITES_SAMPLES = 737280
+
+
+def get_default_dsprites_config():
+    return {
+        'type': "color",
+        'train_val_split': 1.0,
+        'path': os.path.join(get_project_root_path(), "data", "dsprites")
+    }
 
 
 def get_dsprites_datasaet_name(
@@ -56,6 +68,8 @@ def get_dsprites_dataset_url(dataset_name):
         return DSPRITES_ORIGINAL_URL
     elif dataset_name == "dsprites_bw":
         return DSPRITES_BW_URL
+    elif dataset_name == "dsprites_color":
+        return DSPRITES_COLOR_URL
     else:
         raise_unknown(
             "dataset name",
@@ -69,6 +83,8 @@ def get_dsprites_file_hash(dataset_name):
         return DSPRITES_ORIGINAL_HASH
     elif dataset_name == "dsprites_bw":
         return DSPRITES_BW_HASH
+    elif dataset_name == "dsprites_color":
+        return DSPRITES_COLOR_HASH
     else:
         raise_unknown(
             "dataset name",
@@ -122,6 +138,8 @@ def get_dsprites_images_as_tensor_generator(
 
     if n_images == 0:
         n_images = MAX_TOTAL_NUMBER_OF_DSPRITES_SAMPLES
+        if dsprites_config["type"] == "color":
+            n_images *= DSPRITES_NUM_COLORS
 
     dataset = dsprites_base_data.get_unlabelled_dataset(list(range(n_images)))
 
@@ -261,7 +279,7 @@ class DSpritesMultiLabelDataset(DSpritesDataset):
 
 class BaseDataDSprites(BaseData):
 
-    def __init__(self, dsprites_zip, colored, train_val_split):
+    def __init__(self, dsprites_zip, colored, train_val_split, transform=None):
 
         self.colored = colored
         self.imgs = dsprites_zip['imgs']
@@ -272,6 +290,8 @@ class BaseDataDSprites(BaseData):
         possible_features_values = metadata['latents_possible_values']
         if colored:
             possible_features_values['color'] = np.array([1., 2., 3.])
+
+        self.transform = transform
 
         super(BaseDataDSprites, self).__init__(
             possible_features,
@@ -455,7 +475,7 @@ class BaseDataDSprites(BaseData):
             self.features_bases
         ).astype(int)
 
-    def get_dataset(self, indices, transform=None):
+    def get_dataset(self, indices):
         """
         Args:
             indices (List[Set[int]]): a list which "c-th" element
@@ -467,10 +487,10 @@ class BaseDataDSprites(BaseData):
             dsprites_images=self.imgs,
             indices_for_classes_to_extract=indices,
             colored=self.colored,
-            transform=transform
+            transform=self.transform
         )
 
-    def get_unlabelled_dataset(self, indices, transform=None):
+    def get_unlabelled_dataset(self, indices):
         """
         Args:
             indices (List[int]): a list of indices for elements
@@ -482,7 +502,7 @@ class BaseDataDSprites(BaseData):
             dsprites_images=self.imgs,
             indices_to_extract=indices,
             colored=self.colored,
-            transform=transform
+            transform=self.transform
         )
 
     def get_multilabelled_offdiag_dataset(self, indices_to_labels):
@@ -490,7 +510,8 @@ class BaseDataDSprites(BaseData):
         return DSpritesMultiLabelDataset(
             dsprites_images=self.imgs,
             indices_to_labels_to_extract=indices_to_labels,
-            colored=self.colored
+            colored=self.colored,
+            transform=self.transform
         )
 
     def _assert_dataset_specific_feature(self, feature):
@@ -527,10 +548,12 @@ def make_dsprites_base_data(
     dsprites_zip = read_dsprites_npz(
         filename=dataset_path
     )
+    transform = make_transforms(dsprites_config.get("transforms"))
     return BaseDataDSprites(
         dsprites_zip=dsprites_zip,
         colored=(dsprites_config["type"] == "color"),
-        train_val_split=dsprites_config["train_val_split"]
+        train_val_split=dsprites_config["train_val_split"],
+        transform=transform
     )
 
 
@@ -542,7 +565,8 @@ def read_dsprites_npz(filename):
     return np.load(filename, allow_pickle=True, encoding='latin1')
 
 
-# TODO(Alex | 04.04.2022) use get_unlabelled_dataset
+# TODO(Alex | 08.09.2022) Think about better
+# unlabeled data extraction? via method?
 def get_dsprites_unlabeled_data(
     dataset_config,
     split,

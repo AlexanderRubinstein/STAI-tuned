@@ -2,11 +2,14 @@ import itertools
 import copy
 import torch
 import pickle
+import sys
+import os
 
 
 # local modules
-from ..utility.logger import make_logger
-from ..utility.utils import (
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from utility.logger import make_logger
+from utility.utils import (
     NAME_SEP,
     raise_unknown,
     log_or_print,
@@ -14,14 +17,15 @@ from ..utility.utils import (
     deterministic_subset,
     compute_proportion
 )
-from ..datasets.dsprites import (
+from local_datasets.dsprites import (
     make_dsprites_base_data,
     load_dsprites_base_data
 )
-from ..datasets.utils import (
+from local_datasets.utils import (
     make_or_load_from_cache
 )
-from ..datasets.base import BaseData
+from local_datasets.base import BaseData
+sys.path.pop(0)
 
 
 SINGLE_LABEL_FOR_OFF_DIAG = False
@@ -437,18 +441,25 @@ class FeaturesLabeller:
         test_batch_size,
         num_workers
     ):
-        train_loader = self._get_dataloader_from_indices_for_classes(
-            self.indices_for_classes["train"][dataset_name],
-            train_batch_size,
-            shuffle=True,
-            num_workers=num_workers
-        )
-        test_loader = self._get_dataloader_from_indices_for_classes(
-            self.indices_for_classes["test"][dataset_name],
-            test_batch_size,
-            shuffle=False,
-            num_workers=num_workers
-        )
+        train_loader = None
+        test_loader = None
+
+        if train_batch_size > 0:
+            train_loader = self._get_dataloader_from_indices_for_classes(
+                self.indices_for_classes["train"][dataset_name],
+                train_batch_size,
+                shuffle=True,
+                num_workers=num_workers
+            )
+
+        if test_batch_size > 0:
+            test_loader = self._get_dataloader_from_indices_for_classes(
+                self.indices_for_classes["test"][dataset_name],
+                test_batch_size,
+                shuffle=False,
+                num_workers=num_workers
+            )
+
         return train_loader, test_loader
 
     def _get_dataloader_from_indices_for_classes(
@@ -474,18 +485,24 @@ class FeaturesLabeller:
         test_batch_size,
         num_workers
     ):
-        train_loader = self._get_multilabelled_off_diag_dataloader(
-            self.off_diag_indices_to_labels["train"],
-            train_batch_size,
-            shuffle=True,
-            num_workers=num_workers
-        )
-        test_loader = self._get_multilabelled_off_diag_dataloader(
-            self.off_diag_indices_to_labels["test"],
-            test_batch_size,
-            shuffle=False,
-            num_workers=num_workers
-        )
+        train_loader = None
+        test_loader = None
+
+        if train_batch_size > 0:
+            train_loader = self._get_multilabelled_off_diag_dataloader(
+                self.off_diag_indices_to_labels["train"],
+                train_batch_size,
+                shuffle=True,
+                num_workers=num_workers
+            )
+
+        if test_batch_size > 0:
+            test_loader = self._get_multilabelled_off_diag_dataloader(
+                self.off_diag_indices_to_labels["test"],
+                test_batch_size,
+                shuffle=False,
+                num_workers=num_workers
+            )
 
         return train_loader, test_loader
 
