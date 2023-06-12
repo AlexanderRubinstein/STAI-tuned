@@ -2,7 +2,6 @@ import sys
 import os
 import torch
 import torchvision
-import copy
 
 
 # local modules
@@ -18,9 +17,6 @@ from local_datasets.utils import (
 sys.path.pop(0)
 
 
-TRANSFORMS_KEY = "transforms"
-
-
 def make_transforms(transforms_config):
 
     if transforms_config is None:
@@ -31,13 +27,9 @@ def make_transforms(transforms_config):
     if len(transforms_list) == 0:
         return None
 
-    result = []
-
-    # to avoid inplace updates inside "update_enums_in_config"
-    transforms_config = copy.deepcopy(transforms_config)
+    result = torch.nn.ModuleList()
 
     for transform_type in transforms_list:
-        assert transform_type in transforms_config
         transform_name, _ = parse_name_and_number(transform_type)
         if transform_name == "pad":
             result.append(
@@ -69,24 +61,6 @@ def make_transforms(transforms_config):
                     **RRC_config
                 )
             )
-        elif transform_name == "from_class":
-
-            from_class_config = transforms_config[transform_type]
-            assert "class" in from_class_config
-            class_ctor = import_from_string(from_class_config["class"])
-            transform_kwargs = from_class_config.get("kwargs", {})
-            importable_transform_kwargs = from_class_config.get("kwargs_to_import", {})
-
-            update_enums_in_config(
-                importable_transform_kwargs,
-                importable_transform_kwargs.keys()
-            )
-            result.append(
-                class_ctor(
-                    **(transform_kwargs | importable_transform_kwargs)
-                )
-            )
-
         else:
             raise_unknown("transform name", transform_name, transforms_config)
 
@@ -96,8 +70,6 @@ def make_transforms(transforms_config):
 def update_enums_in_config(config, enums, nested_attrs_depth=2):
     for enum in enums:
         if enum in config:
-            assert isinstance(config[enum], str), \
-                f"Please convert \"{enum}\" to string in config:\n{config}"
             config[enum] = import_from_string(
                 config[enum],
                 nested_attrs_depth=nested_attrs_depth

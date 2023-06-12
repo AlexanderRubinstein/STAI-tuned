@@ -20,8 +20,6 @@ EXP_NAME_CONFIG_KEY = "experiment_name"
 START_TIME_CONFIG_KEY = "start_time"
 RUN_PATH_CONFIG_KEY = "current_run_folder"
 TYPE_KEY = "type"
-ANY_KEY = "any"
-NESTED_CONFIG_KEY_SEPARATOR = '/'
 
 
 def make_csv_config(
@@ -38,7 +36,17 @@ def make_csv_config(
     }
 
 
-def get_config(config_path, logger=None):
+def get_config(config_path, check_config, logger=make_logger()):
+
+    def log_which_config_is_checked(logger, config_path):
+        logger.log(
+            "Checking config: {}".format(
+                config_path
+                    if config_path
+                    else "HARDCODED_CONFIG in src/train_eval/configs.py"
+            ),
+            auto_newline=True
+        )
 
     if not os.path.exists(config_path):
         raise Exception(
@@ -46,10 +54,6 @@ def get_config(config_path, logger=None):
                 config_path
             )
         )
-
-    if logger is None:
-        logger = make_logger()
-
     config_dirname = os.path.dirname(config_path)
 
     experiment_name = os.path.basename(config_dirname)
@@ -73,6 +77,9 @@ def get_config(config_path, logger=None):
         experiment_config.pop(EXP_NAME_CONFIG_KEY)
         experiment_config.pop(RUN_PATH_CONFIG_KEY)
         config_path = None
+
+    log_which_config_is_checked(logger, config_path)
+    check_config(experiment_config, config_path, logger=logger)
 
     experiment_config[EXP_NAME_CONFIG_KEY] = experiment_name
 
