@@ -20,6 +20,7 @@ EXP_NAME_CONFIG_KEY = "experiment_name"
 START_TIME_CONFIG_KEY = "start_time"
 RUN_PATH_CONFIG_KEY = "current_run_folder"
 TYPE_KEY = "type"
+ANY_KEY = "any"
 
 
 def make_csv_config(
@@ -36,7 +37,7 @@ def make_csv_config(
     }
 
 
-def get_config(config_path, check_config, logger=make_logger()):
+def get_config(config_path, logger=None):
 
     def log_which_config_is_checked(logger, config_path):
         logger.log(
@@ -54,6 +55,10 @@ def get_config(config_path, check_config, logger=make_logger()):
                 config_path
             )
         )
+
+    if logger is None:
+        logger = make_logger()
+
     config_dirname = os.path.dirname(config_path)
 
     experiment_name = os.path.basename(config_dirname)
@@ -79,7 +84,6 @@ def get_config(config_path, check_config, logger=make_logger()):
         config_path = None
 
     log_which_config_is_checked(logger, config_path)
-    check_config(experiment_config, config_path, logger=logger)
 
     experiment_config[EXP_NAME_CONFIG_KEY] = experiment_name
 
