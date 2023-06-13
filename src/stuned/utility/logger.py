@@ -51,7 +51,8 @@ from .utils import (
     as_str_for_csv,
     remove_file_or_folder,
     log_or_print,
-    get_project_root_path
+    get_project_root_path,
+    compute_tensor_cumsums
 )
 
 
@@ -1711,8 +1712,9 @@ def log_info(logger, tensor, name):
     if logger is None:
         logger = make_logger()
     logger.log(f"{name} norm: {torch.linalg.norm(tensor)}")
-    for dim_i in range(len(tensor.shape)):
+    cumsums = compute_tensor_cumsums(tensor)
+    for dim_i in range(len(cumsums)):
         logger.log(
             f"{name} norm of cumsum for dim: {dim_i}: "
-            f"{torch.linalg.norm(torch.cumsum(tensor, dim=dim_i))}"
+            f"{cumsums[dim_i]}"
         )
