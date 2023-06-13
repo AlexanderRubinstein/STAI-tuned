@@ -28,7 +28,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def prepare_wrapper_for_experiment(check_config):
+def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
 
     def wrapper_for_experiment(run_experiment):
 
@@ -41,11 +41,15 @@ def prepare_wrapper_for_experiment(check_config):
 
                 main_args = parse_args()
 
+                config_path = main_args.config_path
+
                 experiment_config = get_config(
-                    main_args.config_path,
-                    check_config,
+                    config_path,
                     logger
                 )
+
+                if patch_config is not None:
+                    patch_config(experiment_config)
 
                 with redneck_logger_context(
                     experiment_config[LOGGING_CONFIG_KEY],
@@ -55,6 +59,9 @@ def prepare_wrapper_for_experiment(check_config):
                     start_time=None,
                     config_to_log_in_wandb=experiment_config
                 ) as logger:
+
+                    if check_config is not None:
+                        check_config(experiment_config, config_path, logger=logger)
 
                     logger.log(
                         "Experiment config:\n{}".format(

@@ -66,6 +66,7 @@ DELIMETER = ','
 QUOTE_CHAR = '\"'
 ESCAPE_CHAR = '\\'
 INF = float("Inf")
+TOL = 1e6
 
 
 # matplotlib
@@ -1798,3 +1799,14 @@ def get_cmap(image):
     if len(squeezed_shape) == 2:
         cmap = "gray"
     return cmap
+
+
+def compute_tensor_cumsums(tensor):
+    result = []
+    for dim_i in range(len(tensor.shape)):
+        result.append(torch.linalg.norm(torch.cumsum(tensor, dim=dim_i)))
+    return result
+
+
+def compute_unique_tensor_value(tensor):
+    return torch.round(TOL * aggregate_tensors_by_func(compute_tensor_cumsums(tensor)))
