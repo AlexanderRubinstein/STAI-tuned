@@ -1252,13 +1252,27 @@ def bootstrap_by_key_subname(input_dict, subname_to_bootstrap):
         input_dict[key] = new_value
 
 
-def find_by_subkey(iterable, subkey, assert_found=False):
+def find_by_subkey(
+    iterable,
+    subkey,
+    assert_found=False,
+    only_first_occurence=True
+):
+    result = []
     for key in iterable:
         if isinstance(key, str) and subkey in key:
-            return key
+            if only_first_occurence:
+                return key
+            else:
+                result.append(key)
+
+    if len(result) > 0:
+        return result
+
     if assert_found:
         assert False, \
             "Key with subkey {} wasn't found in {}.".format(subkey, iterable)
+
     return None
 
 
