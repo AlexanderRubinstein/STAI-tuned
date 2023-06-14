@@ -26,6 +26,7 @@ from ..utility.utils import (
 )
 from ..utility.configs import (
     AUTOGEN_PREFIX,
+    NESTED_CONFIG_KEY_SEPARATOR,
     make_csv_config
 )
 from ..utility.logger import (
@@ -51,9 +52,6 @@ FILES_URL = "https://drive.google.com/file"
 USE_SRUN = False
 
 
-
-
-NESTED_CONFIG_KEY_SEPARATOR = '/'
 PATH_TO_DEFAULT_CONFIG_COLUMN = "path_to_default_config"
 MAIN_PATH_COLUMN = "path_to_main"
 DEV_NULL = "/dev/null"
