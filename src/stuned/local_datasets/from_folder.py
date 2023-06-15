@@ -22,17 +22,7 @@ def get_dataloaders_from_folder(
     shuffle_eval=False
 ):
 
-    def clean_splits(splits):
-        assert sum(splits.values()) == 1, \
-            "Splits for \"from_folder\" dataset do not sum up to one"
-        splits_to_pop = []
-        for split_name, split_size in splits.items():
-            if split_size == 0:
-                splits_to_pop.append(split_name)
-        for split_to_pop in splits_to_pop:
-            splits.pop(split_to_pop)
-
-    assert "root_path" in data_from_folder_config
+    assert "root" in data_from_folder_config
     assert "splits" in data_from_folder_config
     splits = data_from_folder_config["splits"]
     assert TRAIN_KEY in splits
@@ -41,15 +31,12 @@ def get_dataloaders_from_folder(
     image_transforms = make_transforms(data_from_folder_config.get(TRANSFORMS_KEY))
 
     dataset_from_folder = torchvision.datasets.ImageFolder(
-        root=data_from_folder_config["root_path"],
+        root=data_from_folder_config["root"],
         transform=image_transforms
     )
 
     train_datasets_dict = {}
     eval_datasets_dict = {}
-
-    clean_splits(splits)
-
     datasets_per_split = torch.utils.data.random_split(dataset_from_folder, splits.values())
 
     for split_name, dataset in zip(splits.keys(), datasets_per_split):

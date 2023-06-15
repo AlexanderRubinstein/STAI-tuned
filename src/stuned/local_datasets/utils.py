@@ -51,6 +51,10 @@ YANDEX_API_ENDPOINT = "https://cloud-api.yandex.net/v1/disk" \
 H5_EXTENSION = ".h5"
 
 
+TRAIN_KEY = "train"
+VAL_KEY = "val"
+
+
 def make_default_cache_path():
     return os.path.join(get_project_root_path(), "cache")
 
@@ -387,32 +391,43 @@ def wrap_dataloader(dataloader, wrapper):
     return WrappedDataloader(dataloader, wrapper)
 
 
-def get_default_train_test_dataloaders(
-    dataset,
+def get_generic_train_eval_dataloaders(
+    train_datasets_dict,
+    eval_datasets_dict,
     train_batch_size,
-    test_batch_size,
+    eval_batch_size,
     shuffle_train=True,
-    shuffle_test=False
+    shuffle_eval=False
 ):
 
-    train_dataloader = None
-    test_dataloader = None
+    def add_dataloaders(datasets_dict, batch_size, shuffle):
+        dataloaders_dict = {}
+        for dataset_name, dataset in datasets_dict.items():
+            dataloaders_dict[dataset_name] = DataLoader(
+                dataset,
+                shuffle=shuffle,
+                batch_size=batch_size
+            )
+        return dataloaders_dict
+
+    train_dataloaders = None
+    eval_dataloaders = None
 
     if train_batch_size > 0:
-        train_dataloader = DataLoader(
-            dataset,
-            shuffle=shuffle_train,
-            batch_size=train_batch_size
+        train_dataloaders = add_dataloaders(
+            train_datasets_dict,
+            train_batch_size,
+            shuffle_train
         )
 
-    if test_batch_size > 0:
-        test_dataloader = DataLoader(
-            dataset,
-            shuffle=shuffle_test,
-            batch_size=test_batch_size
+    if eval_batch_size > 0:
+        eval_dataloaders = add_dataloaders(
+            eval_datasets_dict,
+            eval_batch_size,
+            shuffle_eval
         )
 
-    return train_dataloader, {"test": test_dataloader}
+    return train_dataloaders, eval_dataloaders
 
 
 def uniformly_subsample_dataset(dataset, num_samples, deterministic):

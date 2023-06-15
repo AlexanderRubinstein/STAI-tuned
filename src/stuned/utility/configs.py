@@ -40,16 +40,6 @@ def make_csv_config(
 
 def get_config(config_path, logger=None):
 
-    def log_which_config_is_checked(logger, config_path):
-        logger.log(
-            "Checking config: {}".format(
-                config_path
-                    if config_path
-                    else "HARDCODED_CONFIG in src/train_eval/configs.py"
-            ),
-            auto_newline=True
-        )
-
     if not os.path.exists(config_path):
         raise Exception(
             "Config was not found under this path: {}".format(
@@ -83,8 +73,6 @@ def get_config(config_path, logger=None):
         experiment_config.pop(EXP_NAME_CONFIG_KEY)
         experiment_config.pop(RUN_PATH_CONFIG_KEY)
         config_path = None
-
-    log_which_config_is_checked(logger, config_path)
 
     experiment_config[EXP_NAME_CONFIG_KEY] = experiment_name
 
