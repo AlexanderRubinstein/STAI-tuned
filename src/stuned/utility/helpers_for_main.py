@@ -61,6 +61,14 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                 ) as logger:
 
                     if check_config is not None:
+                        logger.log(
+                            "Checking config: {}".format(
+                                config_path
+                                    if config_path
+                                    else "HARDCODED_CONFIG in utility/configs.py"
+                            ),
+                            auto_newline=True
+                        )
                         check_config(experiment_config, config_path, logger=logger)
 
                     logger.log(
