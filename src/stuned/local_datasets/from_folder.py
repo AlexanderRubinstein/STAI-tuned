@@ -22,7 +22,7 @@ def get_dataloaders_from_folder(
     shuffle_eval=False
 ):
 
-    assert "root" in data_from_folder_config
+    assert "root_path" in data_from_folder_config
     assert "splits" in data_from_folder_config
     splits = data_from_folder_config["splits"]
     assert TRAIN_KEY in splits
@@ -31,7 +31,7 @@ def get_dataloaders_from_folder(
     image_transforms = make_transforms(data_from_folder_config.get(TRANSFORMS_KEY))
 
     dataset_from_folder = torchvision.datasets.ImageFolder(
-        root=data_from_folder_config["root"],
+        root=data_from_folder_config["root_path"],
         transform=image_transforms
     )
 
