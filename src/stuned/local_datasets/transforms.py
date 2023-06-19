@@ -2,6 +2,7 @@ import sys
 import os
 import torch
 import torchvision
+import copy
 
 
 # local modules
@@ -58,7 +59,7 @@ def make_transforms(transforms_config):
                 )
             )
         elif transform_name == "random_resized_crop":
-            RRC_config = transforms_config[transform_type]
+            RRC_config = copy.deepcopy(transforms_config[transform_type])
             update_enums_in_config(RRC_config, ["interpolation"])
             result.append(
                 torchvision.transforms.RandomResizedCrop(
@@ -92,6 +93,8 @@ def make_transforms(transforms_config):
 def update_enums_in_config(config, enums, nested_attrs_depth=2):
     for enum in enums:
         if enum in config:
+            assert isinstance(config[enum], str), \
+                f"Please convert \"{enum}\" to string in config:\n{config}"
             config[enum] = import_from_string(
                 config[enum],
                 nested_attrs_depth=nested_attrs_depth
