@@ -379,7 +379,8 @@ def make_new_config(
         DELTA_PREFIX + PREFIX_SEPARATOR
     )
 
-    check_duplicates(list(deltas.keys()))
+    if len(deltas) > 0:
+        check_duplicates(list(deltas.keys()))
 
     keys_to_pop = []
     for key, value in deltas.items():
