@@ -1408,43 +1408,37 @@ def extract_csv_name_from_path(csv_file_path):
     return os.path.basename(csv_file_path).replace(".csv", '')
 
 
-def init_wandb_run(wandb_config, exp_name, wandb_dir, config, logger):
+@retrier_factory_with_auto_logger(
+    max_retries=WANDB_INIT_RETRIES,
+    sleep_time=WANDB_SLEEP_BETWEEN_INIT_RETRIES
+)
+def init_wandb_run(
+    wandb_config,
+    exp_name,
+    wandb_dir,
+    config,
+    logger
+):
 
-    @retrier_factory(
-        logger,
-        max_retries=WANDB_INIT_RETRIES,
-        sleep_time=WANDB_SLEEP_BETWEEN_INIT_RETRIES
+    wandb_password = get_value_from_config(
+        wandb_config["netrc_path"],
+        "password"
     )
-    def init_wandb_run_for_given_logger(
-        wandb_config,
-        exp_name,
-        wandb_dir,
-        config
-    ):
-        wandb_password = get_value_from_config(
-            wandb_config["netrc_path"],
-            "password"
-        )
-        wandb.login(
-            key=wandb_password
-        )
+    wandb.login(
+        key=wandb_password
+    )
 
-        settings = None
-        if SYSTEM_PLATFORM == "linux":
-            settings = wandb.Settings(start_method="fork")
-        return wandb.init(
-            project=exp_name,
-            dir=wandb_dir,
-            settings=settings,
-            sync_tensorboard=wandb_config.get("sync_tb", False),
-            config=config
-        )
-
-    return init_wandb_run_for_given_logger(
-        wandb_config,
-        exp_name,
-        wandb_dir,
-        config
+    settings = None
+    if SYSTEM_PLATFORM == "linux":
+        settings = wandb.Settings(start_method="fork")
+    return wandb.init(
+        project=wandb_config.get("project", exp_name),
+        entity=wandb_config.get("entity"),
+        tags=wandb_config.get("tags"),
+        dir=wandb_dir,
+        settings=settings,
+        sync_tensorboard=wandb_config.get("sync_tb", False),
+        config=config
     )
 
 
