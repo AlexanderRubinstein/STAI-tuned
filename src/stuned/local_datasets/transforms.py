@@ -33,6 +33,9 @@ def make_transforms(transforms_config):
 
     result = []
 
+    # to avoid inplace updates inside "update_enums_in_config"
+    transforms_config = copy.deepcopy(transforms_config)
+
     for transform_type in transforms_list:
         assert transform_type in transforms_config
         transform_name, _ = parse_name_and_number(transform_type)
@@ -59,7 +62,7 @@ def make_transforms(transforms_config):
                 )
             )
         elif transform_name == "random_resized_crop":
-            RRC_config = copy.deepcopy(transforms_config[transform_type])
+            RRC_config = transforms_config[transform_type]
             update_enums_in_config(RRC_config, ["interpolation"])
             result.append(
                 torchvision.transforms.RandomResizedCrop(
