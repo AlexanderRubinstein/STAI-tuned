@@ -22,7 +22,6 @@ from utility.utils import (
     read_csv_as_dict,
     normalize_path,
     check_duplicates,
-    itself_and_lower_upper_case,
     expand_csv,
     retrier_factory
 )
@@ -38,6 +37,7 @@ from utility.logger import (
     DELTA_PREFIX,
     SLURM_PREFIX,
     PREFIX_SEPARATOR,
+    PLACEHOLDERS_FOR_DEFAULT,
     make_logger,
     make_gdrive_client,
     sync_local_file_with_gdrive,
@@ -67,7 +67,6 @@ DEFAULT_SLURM_ARGS_DICT = {
     "output": DEV_NULL
 }
 EMPTY_STRING = "EMPTY_STRING"
-PLACEHOLDERS_FOR_DEFAULT = itself_and_lower_upper_case("Default")
 EXPANDED_CSV_PREFIX = "expanded_"
 TO_RUN = "to_run"
 TO_SKIP = "to_skip"

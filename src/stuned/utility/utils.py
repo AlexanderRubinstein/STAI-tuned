@@ -941,7 +941,7 @@ def remove_elements_from_the_end(sequence, element_to_remove):
 
 
 def itself_and_lower_upper_case(word):
-    return [word, word.lower(), word.upper()]
+    return (word, word.lower(), word.upper())
 
 
 def decode_strings_in_dict(

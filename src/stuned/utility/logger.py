@@ -52,7 +52,8 @@ from .utils import (
     remove_file_or_folder,
     log_or_print,
     get_project_root_path,
-    compute_tensor_cumsums
+    compute_tensor_cumsums,
+    itself_and_lower_upper_case
 )
 
 
@@ -183,6 +184,7 @@ SLURM_PREFIX = "slurm"
 PREFIX_SEPARATOR = ":"
 OLD_PREFIX = "Old "
 PREV_RUN_FOLDER_KEY = "prev_run_folder"
+PLACEHOLDERS_FOR_DEFAULT = itself_and_lower_upper_case("Default")
 
 
 DAEMON_SLEEP_TIME = 20
