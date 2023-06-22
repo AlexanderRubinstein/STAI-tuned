@@ -44,7 +44,8 @@ from utility.logger import (
     log_csv_for_concurrent,
     make_progress_bar,
     fetch_csv,
-    try_to_upload_csv
+    try_to_upload_csv,
+    make_delta_column_name
 )
 
 
@@ -120,7 +121,11 @@ def get_default_log_file_path():
     )
 
 
-def main():
+def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
+
+    if make_final_cmd is None:
+        make_final_cmd = make_final_cmd_slurm
+
     args = parse_args()
 
     logger = make_logger()
@@ -143,8 +148,13 @@ def main():
         f"Processing rows.",
         logger
     )
+    column_names_checked = False
     for row_number, csv_row in inputs_csv.items():
+        if not column_names_checked:
+            check_csv_column_names(csv_row, allowed_prefixes)
+            column_names_checked = True
         whether_to_run, run_cmd = process_csv_row(
+            make_final_cmd,
             csv_row,
             row_number,
             csv_path,
@@ -247,6 +257,7 @@ def get_default_configs_folder():
 
 
 def process_csv_row(
+    make_final_cmd,
     csv_row,
     row_number,
     input_csv_path,
@@ -257,29 +268,6 @@ def process_csv_row(
     worksheet_name,
     logger
 ):
-
-    def check_csv_row(csv_row):
-
-        assert MAIN_PATH_COLUMN in csv_row
-
-        assert WHETHER_TO_RUN_COLUMN in csv_row
-
-        assert PATH_TO_DEFAULT_CONFIG_COLUMN in csv_row
-
-        for i, key in enumerate(csv_row.keys()):
-            assert key is not None, \
-                f"Column {i} has empty column name. " \
-                f"Or some table entries contain commas."
-            if PREFIX_SEPARATOR in key:
-                assert (
-                        DELTA_PREFIX in key
-                    or
-                        SLURM_PREFIX in key
-                ), \
-                f"Did not find \"{DELTA_PREFIX}\" " \
-                f"or \"{SLURM_PREFIX}\" in \"{key}\""
-
-    check_csv_row(csv_row)
 
     replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
     replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
@@ -320,36 +308,62 @@ def process_csv_row(
 
     os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
 
-    with (
-        NamedTemporaryFile('w', delete=False)
-            if not (run_locally or USE_SRUN)
-            else contextlib.nullcontext()
-    ) as tmp_file:
-        if run_locally:
-            final_cmd = "{} &> {} &".format(cmd_as_string, log_file_path)
-        else:
-            slurm_args_dict = make_slurm_args_dict(
-                csv_row,
-                exp_name,
-                log_file_path
-            )
-            if USE_SRUN:
-                slurm_args_as_string = " ".join(
-                    [
-                        f"--{flag}={value}"
-                            for flag, value
-                                in slurm_args_dict.items()
-                    ]
-                )
-                final_cmd = "srun {} sh -c \"{}\" &".format(
-                    slurm_args_as_string,
-                    cmd_as_string
-                )
-            else:
-                fill_sbatch_script(tmp_file, slurm_args_dict, cmd_as_string)
-                final_cmd = "sbatch {}".format(tmp_file.name)
+    if run_locally:
+        final_cmd = "{} &> {} &".format(cmd_as_string, log_file_path)
+    else:
+        final_cmd = make_final_cmd(
+            csv_row,
+            exp_name,
+            log_file_path,
+            cmd_as_string
+        )
 
     return TO_RUN, final_cmd
+
+
+def make_final_cmd_slurm(csv_row, exp_name, log_file_path, cmd_as_string):
+
+    slurm_args_dict = make_slurm_args_dict(
+        csv_row,
+        exp_name,
+        log_file_path
+    )
+    if USE_SRUN:
+        slurm_args_as_string = " ".join(
+            [
+                f"--{flag}={value}"
+                    for flag, value
+                        in slurm_args_dict.items()
+            ]
+        )
+        final_cmd = "srun {} sh -c \"{}\" &".format(
+            slurm_args_as_string,
+            cmd_as_string
+        )
+    else:
+        with (NamedTemporaryFile('w', delete=False)) as tmp_file:
+            fill_sbatch_script(tmp_file, slurm_args_dict, cmd_as_string)
+            final_cmd = "sbatch {}".format(tmp_file.name)
+
+    return final_cmd
+
+
+def check_csv_column_names(csv_row, allowed_prefixes):
+
+    assert MAIN_PATH_COLUMN in csv_row
+
+    assert WHETHER_TO_RUN_COLUMN in csv_row
+
+    assert PATH_TO_DEFAULT_CONFIG_COLUMN in csv_row
+
+    for i, key in enumerate(csv_row.keys()):
+        assert key is not None, \
+            f"Column {i} has empty column name. " \
+            f"Or some table entries contain commas."
+        if PREFIX_SEPARATOR in key:
+            assert any([prefix in key for prefix in allowed_prefixes]), \
+                f"\"{key}\" does not contain any of allowed prefixes " \
+                f"from:\n{allowed_prefixes}\n"
 
 
 def fill_sbatch_script(sbatch_file, slurm_args_dict, command):
@@ -375,23 +389,19 @@ def make_new_config(
 
     deltas = extract_from_csv_row_by_prefix(
         csv_row,
-        DELTA_PREFIX + PREFIX_SEPARATOR
+        DELTA_PREFIX + PREFIX_SEPARATOR,
+        ignore_values=PLACEHOLDERS_FOR_DEFAULT
     )
 
     if len(deltas) > 0:
         check_duplicates(list(deltas.keys()))
 
-    keys_to_pop = []
-    for key, value in deltas.items():
+    for key in deltas.keys():
+        value = deltas[key]
         if value == EMPTY_STRING:
             deltas[key] = ""
-        if value in PLACEHOLDERS_FOR_DEFAULT:
-            keys_to_pop.append(key)
         elif value == "":
-            raise Exception("Empty value for delta:{}".format(key))
-
-    for key in keys_to_pop:
-        deltas.pop(key)
+            raise Exception(f"Empty value for {make_delta_column_name(key)}")
 
     decode_strings_in_dict(
         deltas,
@@ -437,11 +447,6 @@ def make_task_cmd(new_config_path, conda_env, exec_path):
 
 def make_slurm_args_dict(csv_row, exp_name, log_file):
 
-    specified_slurm_args = extract_from_csv_row_by_prefix(
-        csv_row,
-        SLURM_PREFIX + PREFIX_SEPARATOR
-    )
-
     all_slurm_args_dict = copy.deepcopy(DEFAULT_SLURM_ARGS_DICT)
 
     all_slurm_args_dict["job-name"] = exp_name
@@ -449,10 +454,13 @@ def make_slurm_args_dict(csv_row, exp_name, log_file):
     all_slurm_args_dict["output"] = log_file
     all_slurm_args_dict["error"] = log_file
 
-    for flag, value in specified_slurm_args.items():
-        if not value in PLACEHOLDERS_FOR_DEFAULT:
-            # override slurm args if given
-            all_slurm_args_dict[flag] = value
+    specified_slurm_args = extract_from_csv_row_by_prefix(
+        csv_row,
+        SLURM_PREFIX + PREFIX_SEPARATOR,
+        ignore_values=PLACEHOLDERS_FOR_DEFAULT
+    )
+
+    all_slurm_args_dict |= specified_slurm_args
 
     os.makedirs(os.path.dirname(all_slurm_args_dict["output"]), exist_ok=True)
     os.makedirs(os.path.dirname(all_slurm_args_dict["error"]), exist_ok=True)
@@ -460,7 +468,8 @@ def make_slurm_args_dict(csv_row, exp_name, log_file):
     return all_slurm_args_dict
 
 
-def extract_from_csv_row_by_prefix(csv_row, prefix):
+def extract_from_csv_row_by_prefix(csv_row, prefix, ignore_values):
+
     prefix_len = len(prefix)
     result = {}
     for key, value in csv_row.items():
@@ -470,8 +479,15 @@ def extract_from_csv_row_by_prefix(csv_row, prefix):
                 f"Found \"{prefix}\" (nothing after this prefix) "
                 f"in csv_row:\n{csv_row}"
             )
-        if len(key) > prefix_len and prefix == key[:prefix_len]:
+        if (
+                len(key) > prefix_len
+            and
+                prefix == key[:prefix_len]
+            and
+                not value in ignore_values
+        ):
             result[key[prefix_len:]] = value
+
     return result
 
 
