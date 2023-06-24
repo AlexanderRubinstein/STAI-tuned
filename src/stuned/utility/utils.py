@@ -328,66 +328,6 @@ def get_value_from_config(file_path, value_name):
     )
 
 
-def get_checkpoint(experiment_config, logger=None):
-    checkpoint_config = experiment_config["checkpoint"]
-    if (
-        "starting_checkpoint_path" in checkpoint_config
-            and checkpoint_config["starting_checkpoint_path"] is not None
-    ):
-        checkpoint = init_checkpoint(
-            starting_checkpoint_path
-                =checkpoint_config["starting_checkpoint_path"],
-            check_only_model=checkpoint_config["check_only_model"],
-            logger=logger
-        )
-    else:
-        checkpoint = init_checkpoint(
-            experiment_name=experiment_config["experiment_name"],
-            logger=logger
-        )
-    return checkpoint
-
-
-def init_empty_checkpoint(experiment_name):
-    return {
-        "experiment_name": experiment_name,
-        "current_epoch": 0,
-        "model": None,
-        "optimizer": None,
-        "lr_scheduler": None,
-        "criterion": None
-    }
-
-
-def init_checkpoint(
-    starting_checkpoint_path=None,
-    check_only_model=False,
-    experiment_name=None,
-    logger=None
-):
-    # checkpoint contents:
-    #   - experiment_name
-    #   - current epoch number
-    #   - model
-    #   - optimizer
-    #   - lr_scheduler
-    #   - criterion
-    if starting_checkpoint_path is not None:
-        log_or_print(
-            "Reading checkpoing from {}..".format(starting_checkpoint_path),
-            logger=logger,
-            auto_newline=True
-        )
-        checkpoint = read_checkpoint(starting_checkpoint_path)
-    else:
-        assert experiment_name is not None
-        checkpoint = init_empty_checkpoint(
-            experiment_name
-        )
-    check_checkpoint(checkpoint, check_only_model)
-    return checkpoint
-
-
 def log_or_print(msg, logger=None, auto_newline=False):
     if logger:
         logger.log(msg, auto_newline=auto_newline)
@@ -442,27 +382,6 @@ def read_checkpoint(checkpoint_path, map_location=None):
             "Checkpoint path does not exist: {}".format(checkpoint_path)
         )
     return checkpoint
-
-
-def check_checkpoint(checkpoint, check_only_model):
-    if check_only_model:
-        check_dict(checkpoint,
-            [
-                "model"
-            ]
-        )
-    else:
-        check_dict(checkpoint,
-            [
-                "experiment_name",
-                "current_epoch",
-                "model",
-                "optimizer",
-                "lr_scheduler",
-                "criterion"
-            ],
-            check_reverse=True
-        )
 
 
 def save_checkpoint(
