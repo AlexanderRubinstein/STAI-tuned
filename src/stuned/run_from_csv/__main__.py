@@ -1,11 +1,11 @@
 import argparse
 import os
 import copy
-import contextlib
 from tempfile import NamedTemporaryFile
 import subprocess
 import shutil
 import sys
+import multiprocessing as mp
 
 
 # local modules
@@ -74,6 +74,7 @@ TO_SKIP = "to_skip"
 assert TO_RUN != TO_SKIP
 CURRENT_ROW_PLACEHOLDER = "__ROW__"
 CURRENT_WORKSHEET_PLACEHOLDER = "__WORKSHEET__"
+MAX_PROCESSES = 16
 
 
 def parse_args():
@@ -142,61 +143,107 @@ def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
         expand_gsheet(csv_path, spreadsheet_url, worksheet_name, gspread_client)
 
     inputs_csv = read_csv_as_dict(csv_path)
-    rows_to_run = []
-    progress_bar = make_progress_bar(
-        len(inputs_csv),
-        f"Processing rows.",
-        logger
-    )
-    column_names_checked = False
-    for row_number, csv_row in inputs_csv.items():
-        if not column_names_checked:
-            check_csv_column_names(csv_row, allowed_prefixes)
-            column_names_checked = True
-        whether_to_run, run_cmd = process_csv_row(
-            make_final_cmd,
-            csv_row,
-            row_number,
-            csv_path,
-            args.conda_env,
-            args.run_locally,
-            args.log_file_path,
-            spreadsheet_url,
-            worksheet_name,
-            logger
-        )
-        if whether_to_run == TO_RUN:
-            rows_to_run.append((row_number, run_cmd))
-        progress_bar.update()
-    concurrent_log_func = retrier_factory()(log_csv_for_concurrent)
 
-    csv_updates = []
-    for row_number, _ in rows_to_run:
-        csv_updates.append((row_number, STATUS_CSV_COLUMN, SUBMITTED_STATUS))
-        csv_updates.append((row_number, WHETHER_TO_RUN_COLUMN, "0"))
+    with mp.Manager() as shared_memory_manager:
 
-    concurrent_log_func(
-        csv_path,
-        csv_updates
-    )
+        lock = shared_memory_manager.Lock()
+        current_step = shared_memory_manager.Value("int", 0)
+        shared_rows_to_run = shared_memory_manager.list()
+        shared_csv_updates = shared_memory_manager.list()
+        shared_default_config_paths = shared_memory_manager.dict()
 
-    os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
-    with open(args.log_file_path, 'w+') as log_file:
-        for row_number, run_cmd in rows_to_run:
-
-            subprocess.call(
-                run_cmd,
-                stdout=log_file,
-                stderr=log_file,
-                shell=True
+        starmap_args_for_row_processing = [
+            (
+                make_final_cmd,
+                csv_row,
+                row_number,
+                csv_path,
+                args.conda_env,
+                args.run_locally,
+                args.log_file_path,
+                spreadsheet_url,
+                worksheet_name,
+                logger,
+                lock,
+                shared_rows_to_run,
+                shared_default_config_paths,
+                shared_csv_updates,
+                current_step,
+                len(inputs_csv)
             )
+                for row_number, csv_row in inputs_csv.items()
+        ]
 
-    try_to_upload_csv(
-        csv_path,
-        spreadsheet_url,
-        worksheet_name,
-        gspread_client
+        if len(starmap_args_for_row_processing):
+
+            first_csv_row = starmap_args_for_row_processing[0][1]
+            check_csv_column_names(first_csv_row, allowed_prefixes)
+
+            pool_size = get_pool_size(len(starmap_args_for_row_processing))
+
+            upload_csv = False
+
+            with mp.Pool(pool_size) as pool:
+
+                pool.starmap(
+                    process_csv_row,
+                    starmap_args_for_row_processing
+                )
+
+                if len(shared_rows_to_run):
+
+                    assert 2 * len(shared_rows_to_run) == len(shared_csv_updates)
+
+                    concurrent_log_func = retrier_factory()(log_csv_for_concurrent)
+
+                    concurrent_log_func(
+                        csv_path,
+                        shared_csv_updates
+                    )
+
+                    os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
+
+                    starmap_args_for_job_submitting = [
+                        (
+                            run_cmd,
+                            args.log_file_path
+                        )
+                            for run_cmd in shared_rows_to_run
+                    ]
+
+                    pool.starmap(
+                        submit_job,
+                        starmap_args_for_job_submitting
+                    )
+                    upload_csv = True
+
+            if upload_csv:
+                try_to_upload_csv(
+                    csv_path,
+                    spreadsheet_url,
+                    worksheet_name,
+                    gspread_client
+                )
+
+
+def get_pool_size(iterable_len):
+    return min(
+        min(
+            max(1, mp.cpu_count() - 1),
+            iterable_len
+        ),
+        MAX_PROCESSES
     )
+
+
+def submit_job(run_cmd, log_file_path):
+    with open(log_file_path, 'w+') as log_file:
+        subprocess.call(
+            run_cmd,
+            stdout=log_file,
+            stderr=log_file,
+            shell=True
+        )
 
 
 def expand_gsheet(csv_path, spreadsheet_url, worksheet_name, gspread_client):
@@ -236,14 +283,17 @@ def fetch_default_config_path(path, logger):
                 download=True,
                 logger=logger
             )
+
             file_path = os.path.join(
                 get_default_configs_folder(),
                 remote_file["title"].split('.')[0],
-                "config.yaml"
+                f"default_config.yaml"
             )
+
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             shutil.move(tmp_file.name, file_path)
-            return file_path
+
+        return file_path
 
     else:
         return normalize_path(path)
@@ -266,59 +316,91 @@ def process_csv_row(
     log_file_path,
     spreadsheet_url,
     worksheet_name,
-    logger
+    logger,
+    lock,
+    shared_rows_to_run,
+    shared_default_config_paths,
+    shared_csv_updates,
+    current_step,
+    total_rows
 ):
 
-    replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
-    replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
+    final_cmd = None
+
+    whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
 
     if (
-        not csv_row[WHETHER_TO_RUN_COLUMN].isnumeric()
-            or int(csv_row[WHETHER_TO_RUN_COLUMN]) == 0
+        whether_to_run.isnumeric()
+            and int(whether_to_run) != 0
     ):
-        return TO_SKIP, None
 
-    default_config_path = fetch_default_config_path(
-        csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN],
-        logger
-    )
+        replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
+        replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
 
-    assert os.path.exists(default_config_path)
+        default_config_path_or_url = csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN]
+        if not default_config_path_or_url in shared_default_config_paths:
+            with lock:
+                default_config_path = fetch_default_config_path(
+                    default_config_path_or_url,
+                    logger
+                )
+                shared_default_config_paths[default_config_path_or_url] \
+                    = default_config_path
+        else:
+            default_config_path \
+                = shared_default_config_paths[default_config_path_or_url]
 
-    exp_dir = normalize_path(os.path.dirname(default_config_path))
-    exp_name = os.path.basename(exp_dir)
+        assert os.path.exists(default_config_path)
 
-    default_config = read_yaml(default_config_path)
+        exp_dir = normalize_path(os.path.dirname(default_config_path))
+        exp_name = os.path.basename(exp_dir)
 
-    _, new_config_path = make_new_config(
-        csv_row,
-        row_number,
-        input_csv_path,
-        default_config,
-        exp_dir,
-        spreadsheet_url,
-        worksheet_name
-    )
+        default_config = read_yaml(default_config_path)
 
-    cmd_as_string = make_task_cmd(
-        new_config_path,
-        conda_env,
-        normalize_path(csv_row[MAIN_PATH_COLUMN])
-    )
-
-    os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
-
-    if run_locally:
-        final_cmd = "{} &> {} &".format(cmd_as_string, log_file_path)
-    else:
-        final_cmd = make_final_cmd(
+        _, new_config_path = make_new_config(
             csv_row,
-            exp_name,
-            log_file_path,
-            cmd_as_string
+            row_number,
+            input_csv_path,
+            default_config,
+            exp_dir,
+            spreadsheet_url,
+            worksheet_name
         )
 
-    return TO_RUN, final_cmd
+        cmd_as_string = make_task_cmd(
+            new_config_path,
+            conda_env,
+            normalize_path(csv_row[MAIN_PATH_COLUMN])
+        )
+
+        log_folder = os.path.dirname(log_file_path)
+        if not os.path.exists(log_folder):
+            with lock:
+                os.makedirs(log_folder, exist_ok=True)
+
+        if run_locally:
+            final_cmd = "{} &> {} &".format(cmd_as_string, log_file_path)
+        else:
+            final_cmd = make_final_cmd(
+                csv_row,
+                exp_name,
+                log_file_path,
+                cmd_as_string
+            )
+
+    if final_cmd is not None:
+
+        shared_csv_updates.append((row_number, STATUS_CSV_COLUMN, SUBMITTED_STATUS))
+        shared_csv_updates.append((row_number, WHETHER_TO_RUN_COLUMN, "0"))
+        shared_rows_to_run.append(final_cmd)
+
+    with lock:
+        current_step.value += 1
+        logger.progress(
+            "Rows processing.",
+            current_step.value,
+            total_rows
+        )
 
 
 def make_final_cmd_slurm(csv_row, exp_name, log_file_path, cmd_as_string):
