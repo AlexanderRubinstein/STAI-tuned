@@ -42,7 +42,6 @@ from utility.logger import (
     make_gdrive_client,
     sync_local_file_with_gdrive,
     log_csv_for_concurrent,
-    make_progress_bar,
     fetch_csv,
     try_to_upload_csv,
     make_delta_column_name
@@ -69,9 +68,6 @@ DEFAULT_SLURM_ARGS_DICT = {
 }
 EMPTY_STRING = "EMPTY_STRING"
 EXPANDED_CSV_PREFIX = "expanded_"
-TO_RUN = "to_run"
-TO_SKIP = "to_skip"
-assert TO_RUN != TO_SKIP
 CURRENT_ROW_PLACEHOLDER = "__ROW__"
 CURRENT_WORKSHEET_PLACEHOLDER = "__WORKSHEET__"
 MAX_PROCESSES = 16
