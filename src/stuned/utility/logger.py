@@ -253,6 +253,7 @@ class RedneckLogger(BaseLogger):
         self.csv_output = None
         self.tb_run = None
         self.wandb_run = None
+        self.wandb_api = None
         self.gspread_client = None
 
         # gdrive logs sync
@@ -583,7 +584,18 @@ class RedneckLogger(BaseLogger):
 
         return warning_wrapper
 
-    def stop(self):
+    def finish_wandb(self, verbose=False):
+        if self.wandb_run is not None:
+            assert self.wandb_api is not None
+            self.wandb_api.update()
+            if verbose:
+                self.log("Starting wandb finishing")
+            self.wandb_run.finish(quiet=WANDB_QUIET)
+            if verbose:
+                self.log("wandb is finished")
+            self.wandb_run = None
+
+    def stop_gdrive_daemon(self):
         if self.gdrive_daemon:
             self.gdrive_daemon.terminate()
             self.gdrive_daemon.join()
@@ -682,9 +694,9 @@ def handle_exception(logger, exception=None):
     try_to_sync_csv_with_remote(logger)
     if "profiler_results" in logger.cache:
         dump_profiler_results(logger)
-    if logger.wandb_run:
-        logger.wandb_run.finish(quiet=WANDB_QUIET)
-    logger.stop()
+
+    logger.finish_wandb()
+    logger.stop_gdrive_daemon()
     sys.exit(1)
 
 
@@ -873,7 +885,7 @@ def redneck_logger_context(
         os.makedirs(wandb_dir, exist_ok=True)
         if use_tb and wandb_config.get("sync_tb", False):
             wandb.tensorboard.patch(root_logdir=tb_log_dir, pytorch=True)
-        logger.wandb_run = init_wandb_run(
+        logger.wandb_run, logger.wandb_api = init_wandb_run(
             wandb_config,
             exp_name,
             wandb_dir=wandb_dir,
@@ -956,11 +968,7 @@ def redneck_logger_context(
             try_to_sync_csv_with_remote(logger)
 
     # close wandb
-    if logger.wandb_run:
-        logger.log("Starting wandb finishing")
-        logger.wandb_run.finish(quiet=WANDB_QUIET)
-        logger.log("wandb is finished")
-        logger.wandb_run = None
+    logger.finish_wandb(verbose=True)
 
     try_to_log_in_csv_in_batch(
         logger,
@@ -972,7 +980,7 @@ def redneck_logger_context(
     )
     logger.log("Final log line for remote logs!")
     try_to_sync_csv_with_remote(logger)
-    logger.stop()
+    logger.stop_gdrive_daemon()
     logger.log("Logger context cleaned!")
 
 
@@ -1433,7 +1441,7 @@ def init_wandb_run(
     settings = None
     if SYSTEM_PLATFORM == "linux":
         settings = wandb.Settings(start_method="fork")
-    return wandb.init(
+    run = wandb.init(
         project=wandb_config.get("project", exp_name),
         entity=wandb_config.get("entity"),
         tags=wandb_config.get("tags"),
@@ -1442,6 +1450,8 @@ def init_wandb_run(
         sync_tensorboard=wandb_config.get("sync_tb", False),
         config=config
     )
+    api = wandb.Api().run(run.path)
+    return run, api
 
 
 class GdriveClient:
