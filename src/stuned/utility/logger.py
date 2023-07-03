@@ -1450,7 +1450,7 @@ def init_wandb_run(
         sync_tensorboard=wandb_config.get("sync_tb", False),
         config=config
     )
-    api = wandb.Api().run(run.path)
+    api = wandb.Api(api_key=wandb_password).run(run.path)
     return run, api
 
 
