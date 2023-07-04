@@ -265,6 +265,11 @@ def get_device(use_gpu, idx=0):
 
 
 def get_model_device(model):
+
+    # if timm model
+    if hasattr(model, "blocks"):
+        model = model.blocks
+
     assert isinstance(model, torch.nn.Module)
     return next(model.parameters()).device
 
@@ -1743,3 +1748,16 @@ def compute_tensor_cumsums(tensor):
 
 def compute_unique_tensor_value(tensor):
     return torch.round(TOL * aggregate_tensors_by_func(compute_tensor_cumsums(tensor)))
+
+
+def prune_list(l, value):
+    return list(filter((value).__ne__, l))
+
+
+def get_with_assert(container, key, error_msg=None):
+
+    if error_msg is None:
+        error_msg = f"Key \"{key}\" not in container: {container}"
+
+    assert key in container, error_msg
+    return container[key]
