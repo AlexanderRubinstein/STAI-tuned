@@ -1,5 +1,6 @@
 import torch
 import torchvision
+import copy
 
 
 # local modules
@@ -34,7 +35,7 @@ def get_dataloaders_from_folder(
 
     assert "root_path" in data_from_folder_config
     assert "splits" in data_from_folder_config
-    splits = data_from_folder_config["splits"]
+    splits = copy.deepcopy(data_from_folder_config["splits"])
     assert TRAIN_KEY in splits
     assert VAL_KEY in splits
 
