@@ -9,7 +9,9 @@ import copy
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from utility.utils import (
     raise_unknown,
-    parse_name_and_number,
+    parse_name_and_number
+)
+from utility.imports import (
     import_from_string
 )
 from local_datasets.utils import (
