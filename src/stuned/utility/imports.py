@@ -5,6 +5,16 @@ import importlib
 from itertools import chain
 
 
+# local modules
+from .utils import (
+    error_or_print,
+    get_nested_attr
+)
+
+
+PACKAGE_SEPARATOR = "."
+
+
 class LazyModuleWrapper(ModuleType):
 
     def __init__(self, module_name):
@@ -130,3 +140,45 @@ def make_lazy_module(
         module_spec,
         extra_objects
     )
+
+
+def pop_all_modules_by_filter(filter_condition, filter_name=None, logger=None):
+    imported_modules = sorted(list(filter(filter_condition, sys.modules.keys())))
+    if filter_name is None:
+        filter_name = " AND ".join(
+            set.intersection(
+                *[set(name.split(PACKAGE_SEPARATOR)) for name in imported_modules]
+            )
+        )
+    if len(imported_modules) > 0:
+        error_or_print(
+            f"Removing all modules satisfying filter \"{filter_name}\" "
+            f"from sys.modules",
+            logger
+        )
+    for m in imported_modules:
+        sys.modules.pop(m)
+    return imported_modules
+
+
+# https://github.com/CompVis/latent-diffusion/blob/a506df5756472e2ebaf9078affdde2c4f1502cd4/ldm/util.py#L88
+def import_from_string(string, reload=False, nested_attrs_depth=1):
+
+    module_path_and_attrs = string.rsplit(PACKAGE_SEPARATOR, nested_attrs_depth)
+
+    module_path = module_path_and_attrs[0]
+
+    nested_attrs = module_path_and_attrs[1:]
+
+    module = importlib.import_module(module_path)
+
+    if reload:
+        importlib.reload(module)
+
+    if len(nested_attrs) > 0:
+        module = get_nested_attr(
+            module,
+            nested_attrs
+        )
+
+    return module

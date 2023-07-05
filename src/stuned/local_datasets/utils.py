@@ -287,13 +287,17 @@ def get_dataloader_init_args_from_existing_dataloader(
     return dataloader_init_args
 
 
+def default_pickle_load(path):
+    return pickle.load(open(path, "rb"))
+
+
 def make_or_load_from_cache(
     object_name,
     object_config,
     make_func,
-    load_func,
-    cache_path,
-    forward_cache_path,
+    load_func=default_pickle_load,
+    cache_path=make_default_cache_path(),
+    forward_cache_path=False,
     logger=make_logger(),
     unique_hash=None
 ):

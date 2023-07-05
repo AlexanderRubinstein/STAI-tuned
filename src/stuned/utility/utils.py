@@ -25,7 +25,6 @@ import itertools
 import contextlib
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import importlib
 import io
 import re
 import matplotlib.pyplot as plt
@@ -42,7 +41,6 @@ TEST_ENV_NAME = os.environ["TEST_ENV"]
 BASHRC_PATH = os.path.join(os.environ["HOME"], ".bashrc")
 NEW_SHELL_INIT_COMMAND = "source {} && conda activate".format(BASHRC_PATH)
 FLOATING_POINT = "."
-PACKAGE_SEPARATOR = "."
 NAME_SEP = "_"
 NAME_NUMBER_SEPARATOR = '-'
 NULL_CONTEXT = contextlib.nullcontext()
@@ -344,7 +342,7 @@ def error_or_print(msg, logger=None, auto_newline=False):
     if logger:
         logger.error(msg, auto_newline=auto_newline)
     else:
-        print(msg, file=sys.stderr)
+        print(msg, file=sys.stderr, flush=True)
 
 
 def read_checkpoint(checkpoint_path, map_location=None):
@@ -1576,29 +1574,6 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
     observer.join()
 
     return has_events_bool
-
-
-# https://github.com/CompVis/latent-diffusion/blob/a506df5756472e2ebaf9078affdde2c4f1502cd4/ldm/util.py#L88
-def import_from_string(string, reload=False, nested_attrs_depth=1):
-
-    module_path_and_attrs = string.rsplit(PACKAGE_SEPARATOR, nested_attrs_depth)
-
-    module_path = module_path_and_attrs[0]
-
-    nested_attrs = module_path_and_attrs[1:]
-
-    module = importlib.import_module(module_path)
-
-    if reload:
-        importlib.reload(module)
-
-    if len(nested_attrs) > 0:
-        module = get_nested_attr(
-            module,
-            nested_attrs
-        )
-
-    return module
 
 
 def as_str_for_csv(value, chars_to_remove=[]):
