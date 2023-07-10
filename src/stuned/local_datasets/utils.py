@@ -15,7 +15,8 @@ import torch
 from typing import (
     Union,
     Dict,
-    List
+    List,
+    Callable
 )
 
 
@@ -53,6 +54,26 @@ H5_EXTENSION = ".h5"
 
 TRAIN_KEY = "train"
 VAL_KEY = "val"
+
+
+class DatasetWrapperWithTransforms(torch.utils.data.Dataset):
+
+    def __init__(self, dataset, transform):
+        assert isinstance(transform, Callable)
+        self.inner_dataset = dataset
+        self.transform = transform
+
+    def __getitem__(self, index):
+        x, y = self.inner_dataset[index]
+        x = self.transform(x)
+        return x, y
+
+    def __len__(self):
+        return len(self.inner_dataset)
+
+
+def make_dataset_wrapper_with_transforms(dataset, transform):
+    return DatasetWrapperWithTransforms(dataset, transform)
 
 
 def make_default_cache_path():

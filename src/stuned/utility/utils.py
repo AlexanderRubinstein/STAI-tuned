@@ -74,6 +74,21 @@ PLT_PLOT_HEIGHT = 5
 PLT_PLOT_WIDTH = 5
 
 
+class ChildrenForPicklingPreparer:
+
+    def _prepare_for_pickling(self):
+        for attr_name in object_attributes(self):
+            prepare_for_pickling(getattr(self, attr_name))
+
+    def _prepare_for_unpickling(self):
+        for attr_name in object_attributes(self):
+            prepare_for_unpickling(getattr(self, attr_name))
+
+
+def object_attributes(obj):
+    return filter(lambda a: not a.startswith('__'), dir(obj))
+
+
 def read_yaml(yaml_file):
     with open(yaml_file, 'r') as stream:
         return yaml.safe_load(stream)
@@ -384,6 +399,8 @@ def read_checkpoint(checkpoint_path, map_location=None):
         raise Exception(
             "Checkpoint path does not exist: {}".format(checkpoint_path)
         )
+    for obj in checkpoint.values():
+        prepare_for_unpickling(obj)
     return checkpoint
 
 
@@ -408,11 +425,22 @@ def save_checkpoint(
         checkpoint,
         open(checkpoint_savepath, "wb")
     )
+    for obj in checkpoint.values():
+        prepare_for_unpickling(obj)
 
 
 def prepare_for_pickling(obj):
     if hasattr(obj, "_prepare_for_pickling"):
         obj._prepare_for_pickling()
+    if hasattr(obj, "_prepare_for_pickling_external"):
+        obj._prepare_for_pickling_external(obj)
+
+
+def prepare_for_unpickling(obj):
+    if hasattr(obj, "_prepare_for_unpickling"):
+        obj._prepare_for_unpickling()
+    if hasattr(obj, "_prepare_for_unpickling_external"):
+        obj._prepare_for_unpickling_external(obj)
 
 
 def make_checkpoint_name(checkpoint):
