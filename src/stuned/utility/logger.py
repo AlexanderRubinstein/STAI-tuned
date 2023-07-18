@@ -53,7 +53,8 @@ from .utils import (
     log_or_print,
     get_project_root_path,
     compute_tensor_cumsums,
-    itself_and_lower_upper_case
+    itself_and_lower_upper_case,
+    get_with_assert
 )
 
 
@@ -864,7 +865,7 @@ def redneck_logger_context(
             ]
         )
 
-    use_tb = logging_config["use_tb"]
+    use_tb = get_with_assert(logging_config, "use_tb")
     tb_log_dir = None
     tb_upload = False
     if use_tb:
@@ -873,7 +874,7 @@ def redneck_logger_context(
             TB_LOG_FOLDER
         )
 
-    use_wandb = logging_config["use_wandb"]
+    use_wandb = get_with_assert(logging_config, "use_wandb")
     # init wandb_run if exists
     if use_wandb:
         wandb_config = logging_config["wandb"]
