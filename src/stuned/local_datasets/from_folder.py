@@ -23,6 +23,14 @@ def get_dataloaders_from_folder(
     shuffle_eval=False
 ):
 
+    def assert_datasets(batch_size, datasets, train_or_eval, splits):
+        if batch_size > 0:
+            assert len(datasets) > 0, \
+                f"There is no split for \"{train_or_eval}\", " \
+                f"while \"{train_or_eval}\" batch_size " \
+                f"is non-zero ({batch_size})." \
+                f"\nsplits: {splits}"
+
     def clean_splits(splits):
         assert sum(splits.values()) == 1, \
             "Splits for \"from_folder\" dataset do not sum up to one"
@@ -58,6 +66,9 @@ def get_dataloaders_from_folder(
             train_datasets_dict[split_name] = dataset
         else:
             eval_datasets_dict[split_name] = dataset
+
+    assert_datasets(train_batch_size, train_datasets_dict, "train", splits)
+    assert_datasets(eval_batch_size, eval_datasets_dict, "eval", splits)
 
     train_dataloaders, eval_dataloaders = get_generic_train_eval_dataloaders(
         train_datasets_dict,

@@ -36,7 +36,8 @@ from utility.utils import (
     randomly_subsample_indices_uniformly,
     deterministically_subsample_indices_uniformly,
     show_images,
-    append_dict
+    append_dict,
+    compute_proportion
 )
 sys.path.pop(0)
 
@@ -244,15 +245,46 @@ def assert_dataset_as_file(file_hash):
     return assert_file_by_hash
 
 
-def randomly_subsampled_dataloader(dataloader, num_samples, batch_size=None):
+def randomly_subsampled_dataloader(dataloader, fraction, batch_size=None):
+
+    if isinstance(dataloader, ManyDataloadersWrapper):
+        new_dataloaders_list = []
+        for sub_dataloader in dataloader.dataloaders_list:
+            new_dataloaders_list.append(
+                randomly_subsampled_dataloader(
+                    sub_dataloader,
+                    fraction,
+                    batch_size=batch_size
+                )
+            )
+        new_dataloader = wrap_dataloader(
+            new_dataloaders_list,
+            dataloader.wrapper
+        )
+    else:
+        new_dataloader = subsample_dataloader_randomly(
+            dataloader,
+            fraction,
+            batch_size=batch_size
+        )
+
+    return new_dataloader
+
+
+def subsample_dataloader_randomly(dataloader, fraction, batch_size=None):
+    num_samples = compute_proportion(
+        fraction,
+        len(dataloader.dataset)
+    )
     dataloader_is_wrapper = False
     wrapper = None
     # TODO(Alex | 12.06.2023) make valid for DspritesDataloaderWrapper as well
-    if isinstance(dataloader, (WrappedDataloader)):
+    if isinstance(dataloader, SingleDataloaderWrapper):
         dataloader_is_wrapper = True
-        if isinstance(dataloader, WrappedDataloader):
-            wrapper = dataloader.wrapper
+        wrapper = dataloader.wrapper
         dataloader = dataloader.dataloader
+    elif isinstance(dataloader, ManyDataloadersWrapper):
+        raise TypeError(f"Can't subsample dataloader of type: {type(dataloader)}")
     else:
         assert isinstance(dataloader, DataLoader)
 
@@ -275,13 +307,12 @@ def randomly_subsampled_dataloader(dataloader, num_samples, batch_size=None):
 
     if dataloader_is_wrapper:
         if wrapper is not None:
-            new_dataloader = WrappedDataloader(new_dataloader, wrapper=wrapper)
+            new_dataloader = wrap_dataloader(new_dataloader, wrapper=wrapper)
         else:
             raise Exception(
                 "Most likely DspritesDataloaderWrapper is used, "
                 "but it is not supported."
             )
-
     return new_dataloader
 
 
@@ -399,11 +430,13 @@ def make_or_load_from_cache(
     return result
 
 
-class WrappedDataloader:
+class SingleDataloaderWrapper:
+
     def __init__(self, dataloader, wrapper):
         self.dataloader = dataloader
         self.dataset = self.dataloader.dataset
         self.wrapper = wrapper
+        self.batch_size = self.dataloader.batch_size
 
     def __iter__(self):
         return self.wrapper(iter(self.dataloader))
@@ -412,8 +445,35 @@ class WrappedDataloader:
         return len(self.dataloader)
 
 
-def wrap_dataloader(dataloader, wrapper):
-    return WrappedDataloader(dataloader, wrapper)
+class ManyDataloadersWrapper:
+
+    def __init__(self, dataloaders_list, wrapper):
+        self.dataloaders_list = dataloaders_list
+        self.batch_size = None
+        self.length = 0
+        self.wrapper = wrapper
+        for dataloader in dataloaders_list:
+            if self.batch_size is None:
+                self.batch_size = dataloader.batch_size
+            else:
+                assert self.batch_size == dataloader.batch_size, \
+                    "All chaining dataloaders should have the same batchsize"
+            self.length += len(dataloader)
+
+    def __iter__(self):
+        return self.wrapper(
+            [iter(dataloader) for dataloader in self.dataloaders_list]
+        )
+
+    def __len__(self):
+        return self.length
+
+
+def wrap_dataloader(wrappable, wrapper):
+    if isinstance(wrappable, list):
+        return ManyDataloadersWrapper(wrappable, wrapper)
+    else:
+        return SingleDataloaderWrapper(wrappable, wrapper)
 
 
 def get_generic_train_eval_dataloaders(
@@ -567,3 +627,29 @@ def make_named_labels_batch(label_names, labels_batch):
         labels_batch = {label_names[0]: labels_batch}
 
     return labels_batch
+
+
+class ChainingIteratorsWrapper:
+
+    def __init__(self, iterators_list):
+        self.iterators = iterators_list
+        self.current_iterator_id = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        current_iterator = self.iterators[self.current_iterator_id]
+        try:
+            iteration_element = next(current_iterator)
+        except StopIteration:
+            if self.current_iterator_id + 1 == len(self.iterators):
+                raise
+            else:
+                self.current_iterator_id += 1
+                iteration_element = self.__next__()
+        return iteration_element
+
+
+def chain_dataloaders(dataloaders_list):
+    return wrap_dataloader(dataloaders_list, ChainingIteratorsWrapper)

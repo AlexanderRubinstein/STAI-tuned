@@ -12,7 +12,9 @@ from utility.utils import (
     parse_name_and_number
 )
 from utility.imports import (
-    import_from_string
+    FROM_CLASS_KEY,
+    make_from_class_ctor,
+    update_enums_in_config
 )
 from local_datasets.utils import (
     randomly_subsample_indices_uniformly
@@ -35,75 +37,50 @@ def make_transforms(transforms_config):
 
     result = []
 
-    # to avoid inplace updates inside "update_enums_in_config"
-    transforms_config = copy.deepcopy(transforms_config)
-
-    for transform_type in transforms_list:
-        assert transform_type in transforms_config
-        transform_name, _ = parse_name_and_number(transform_type)
+    for transform_name in transforms_list:
+        assert transform_name in transforms_config
+        specific_transform_config = transforms_config[transform_name]
         if transform_name == "pad":
             result.append(
                 torchvision.transforms.Pad(
-                    **transforms_config[transform_type]
+                    **specific_transform_config
                 )
             )
         elif transform_name == "random_rotate":
             result.append(
                 torchvision.transforms.RandomRotation(
-                    **transforms_config[transform_type]
+                    **specific_transform_config
                 )
             )
         elif transform_name == "random_scale":
             result.append(
-                RandomScaleTransform(**transforms_config[transform_type])
+                RandomScaleTransform(**specific_transform_config)
             )
         elif transform_name == "random_crop":
             result.append(
                 torchvision.transforms.RandomCrop(
-                    **transforms_config[transform_type]
+                    **specific_transform_config
                 )
             )
         elif transform_name == "random_resized_crop":
-            RRC_config = transforms_config[transform_type]
-            update_enums_in_config(RRC_config, ["interpolation"])
+            RRC_config = update_enums_in_config(
+                specific_transform_config,
+                ["interpolation"]
+            )
             result.append(
                 torchvision.transforms.RandomResizedCrop(
                     **RRC_config
                 )
             )
-        elif transform_name == "from_class":
-
-            from_class_config = transforms_config[transform_type]
-            assert "class" in from_class_config
-            class_ctor = import_from_string(from_class_config["class"])
-            transform_kwargs = from_class_config.get("kwargs", {})
-            importable_transform_kwargs = from_class_config.get("kwargs_to_import", {})
-
-            update_enums_in_config(
-                importable_transform_kwargs,
-                importable_transform_kwargs.keys()
-            )
+        elif transform_name.startswith(FROM_CLASS_KEY):
             result.append(
-                class_ctor(
-                    **(transform_kwargs | importable_transform_kwargs)
-                )
+                make_from_class_ctor(specific_transform_config)
             )
 
         else:
             raise_unknown("transform name", transform_name, transforms_config)
 
     return torchvision.transforms.Compose(result)
-
-
-def update_enums_in_config(config, enums, nested_attrs_depth=2):
-    for enum in enums:
-        if enum in config:
-            assert isinstance(config[enum], str), \
-                f"Please convert \"{enum}\" to string in config:\n{config}"
-            config[enum] = import_from_string(
-                config[enum],
-                nested_attrs_depth=nested_attrs_depth
-            )
 
 
 class RandomScaleTransform(torch.nn.Module):

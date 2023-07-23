@@ -22,7 +22,9 @@ from local_datasets.dsprites import (
     load_dsprites_base_data
 )
 from local_datasets.utils import (
-    make_or_load_from_cache
+    make_or_load_from_cache,
+    randomly_subsampled_dataloader,
+    chain_dataloaders
 )
 from local_datasets.base import BaseData
 sys.path.pop(0)
@@ -394,7 +396,8 @@ class FeaturesLabeller:
         train_batch_size,
         test_batch_size,
         num_workers=1,
-        single_label=SINGLE_LABEL_FOR_OFF_DIAG
+        single_label=SINGLE_LABEL_FOR_OFF_DIAG,
+        off_diag_percent=0
     ):
 
         train_loaders = {}
@@ -409,6 +412,30 @@ class FeaturesLabeller:
             )
 
         if len(self.features_list) > 1:
+
+            # add some off-diag samples to train dataloader
+            if off_diag_percent > 0:
+
+                off_diag_addition_train_dataloader, _ = \
+                    self._get_dataloaders_for_dataset_name(
+                        self.off_diag_names[0],
+                        train_batch_size,
+                        0,
+                        num_workers
+                    )
+
+                off_diag_addition_train_dataloader = randomly_subsampled_dataloader(
+                    off_diag_addition_train_dataloader,
+                    off_diag_percent,
+                    batch_size=train_batch_size
+                )
+
+                train_loaders[self.diag_name] = chain_dataloaders(
+                    [
+                        train_loaders[self.diag_name],
+                        off_diag_addition_train_dataloader
+                    ]
+                )
 
             if single_label:
 

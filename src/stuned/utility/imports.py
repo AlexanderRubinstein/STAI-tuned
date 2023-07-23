@@ -3,6 +3,7 @@ import os
 from types import ModuleType
 import importlib
 from itertools import chain
+import copy
 
 
 # local modules
@@ -13,6 +14,9 @@ from .utils import (
 
 
 PACKAGE_SEPARATOR = "."
+
+
+FROM_CLASS_KEY = "from_class"
 
 
 class LazyModuleWrapper(ModuleType):
@@ -182,3 +186,34 @@ def import_from_string(string, reload=False, nested_attrs_depth=1):
         )
 
     return module
+
+
+def make_from_class_ctor(from_class_config, pos_args_list=[]):
+
+    assert "class" in from_class_config
+    class_ctor = import_from_string(from_class_config["class"])
+    kwargs = from_class_config.get("kwargs", {})
+    importable_kwargs = from_class_config.get("kwargs_to_import", {})
+
+    importable_kwargs = update_enums_in_config(
+        importable_kwargs,
+        importable_kwargs.keys()
+    )
+
+    return class_ctor(
+        *pos_args_list,
+        **(kwargs | importable_kwargs)
+    )
+
+
+def update_enums_in_config(config, enums, nested_attrs_depth=2):
+    config = copy.deepcopy(config)
+    for enum in enums:
+        if enum in config:
+            assert isinstance(config[enum], str), \
+                f"Please convert \"{enum}\" to string in config:\n{config}"
+            config[enum] = import_from_string(
+                config[enum],
+                nested_attrs_depth=nested_attrs_depth
+            )
+    return config
