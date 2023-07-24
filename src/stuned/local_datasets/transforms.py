@@ -40,41 +40,14 @@ def make_transforms(transforms_config):
     for transform_name in transforms_list:
         assert transform_name in transforms_config
         specific_transform_config = transforms_config[transform_name]
-        if transform_name == "pad":
-            result.append(
-                torchvision.transforms.Pad(
-                    **specific_transform_config
-                )
-            )
-        elif transform_name == "random_rotate":
-            result.append(
-                torchvision.transforms.RandomRotation(
-                    **specific_transform_config
-                )
-            )
-        elif transform_name == "random_scale":
-            result.append(
-                RandomScaleTransform(**specific_transform_config)
-            )
-        elif transform_name == "random_crop":
-            result.append(
-                torchvision.transforms.RandomCrop(
-                    **specific_transform_config
-                )
-            )
-        elif transform_name == "random_resized_crop":
-            RRC_config = update_enums_in_config(
-                specific_transform_config,
-                ["interpolation"]
-            )
-            result.append(
-                torchvision.transforms.RandomResizedCrop(
-                    **RRC_config
-                )
-            )
-        elif transform_name.startswith(FROM_CLASS_KEY):
+        if transform_name.startswith(FROM_CLASS_KEY):
             result.append(
                 make_from_class_ctor(specific_transform_config)
+            )
+
+        elif transform_name.startswith("random_scale"):
+            result.append(
+                RandomScaleTransform(**specific_transform_config)
             )
 
         else:
