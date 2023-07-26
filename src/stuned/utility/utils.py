@@ -207,20 +207,24 @@ def check_dict(
         )
         if not check_1:
             break
-    if check_1 and check_reverse:
-        allowed_keys = set(required_keys + optional_keys)
-        for key in dict.keys():
-            check_2 = check_element_in_iterable(
-                allowed_keys,
-                key,
-                "key",
-                "set of allowed keys",
-                reference=dict,
-                raise_if_wrong=raise_if_wrong
-            )
-            if not check_2:
-                break
+    if check_1:
+        if check_reverse:
+            allowed_keys = set(required_keys + optional_keys)
+            for key in dict.keys():
+                check_2 = check_element_in_iterable(
+                    allowed_keys,
+                    key,
+                    "key",
+                    "set of allowed keys",
+                    reference=dict,
+                    raise_if_wrong=raise_if_wrong
+                )
+                if not check_2:
+                    break
+        else:
+            check_2 = True
     return check_1 and check_2
+
 
 def runcmd(cmd, verbose=False, logger=None):
 
