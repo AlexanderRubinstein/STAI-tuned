@@ -115,6 +115,7 @@ WANDB_URL_COLUMN = "WandB url"
 WANDB_QUIET = True
 WANDB_INIT_RETRIES = 100
 WANDB_SLEEP_BETWEEN_INIT_RETRIES = 60
+PROJECT_KEY = "project"
 
 
 # Tensorboard
@@ -1442,14 +1443,15 @@ def init_wandb_run(
     settings = None
     if SYSTEM_PLATFORM == "linux":
         settings = wandb.Settings(start_method="fork")
+    wandb_init_kwargs = wandb_config.get("wandb_init_kwargs", {})
+    if PROJECT_KEY not in wandb_init_kwargs:
+        wandb_init_kwargs[PROJECT_KEY] = exp_name
     run = wandb.init(
-        project=wandb_config.get("project", exp_name),
-        entity=wandb_config.get("entity"),
-        tags=wandb_config.get("tags"),
         dir=wandb_dir,
         settings=settings,
         sync_tensorboard=wandb_config.get("sync_tb", False),
-        config=config
+        config=config,
+        **wandb_init_kwargs
     )
     api = wandb.Api(api_key=wandb_password).run(run.path)
     return run, api
