@@ -432,14 +432,15 @@ def make_or_load_from_cache(
 
 class SingleDataloaderWrapper:
 
-    def __init__(self, dataloader, wrapper):
+    def __init__(self, dataloader, wrapper, **kwargs):
         self.dataloader = dataloader
+        self.kwargs = kwargs
         self.dataset = self.dataloader.dataset
         self.wrapper = wrapper
         self.batch_size = self.dataloader.batch_size
 
     def __iter__(self):
-        return self.wrapper(iter(self.dataloader))
+        return self.wrapper(iter(self.dataloader), **self.kwargs)
 
     def __len__(self):
         return len(self.dataloader)
@@ -447,11 +448,12 @@ class SingleDataloaderWrapper:
 
 class ManyDataloadersWrapper:
 
-    def __init__(self, dataloaders_list, wrapper):
+    def __init__(self, dataloaders_list, wrapper, **kwargs):
         self.dataloaders_list = dataloaders_list
         self.batch_size = None
         self.length = 0
         self.wrapper = wrapper
+        self.kwargs = kwargs
         for dataloader in dataloaders_list:
             if self.batch_size is None:
                 self.batch_size = dataloader.batch_size
@@ -462,18 +464,19 @@ class ManyDataloadersWrapper:
 
     def __iter__(self):
         return self.wrapper(
-            [iter(dataloader) for dataloader in self.dataloaders_list]
+            [iter(dataloader) for dataloader in self.dataloaders_list],
+            **self.kwargs
         )
 
     def __len__(self):
         return self.length
 
 
-def wrap_dataloader(wrappable, wrapper):
+def wrap_dataloader(wrappable, wrapper, **kwargs):
     if isinstance(wrappable, list):
-        return ManyDataloadersWrapper(wrappable, wrapper)
+        return ManyDataloadersWrapper(wrappable, wrapper, **kwargs)
     else:
-        return SingleDataloaderWrapper(wrappable, wrapper)
+        return SingleDataloaderWrapper(wrappable, wrapper, **kwargs)
 
 
 def get_generic_train_eval_dataloaders(
