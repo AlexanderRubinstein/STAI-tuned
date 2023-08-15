@@ -37,7 +37,8 @@ from utility.utils import (
     deterministically_subsample_indices_uniformly,
     show_images,
     append_dict,
-    compute_proportion
+    compute_proportion,
+    properties_diff
 )
 sys.path.pop(0)
 
@@ -304,6 +305,14 @@ def subsample_dataloader_randomly(dataloader, fraction, batch_size=None):
         dataloader_init_args["batch_size"] = batch_size
 
     new_dataloader = DataLoader(**dataloader_init_args)
+
+    custom_properties = properties_diff(dataloader, new_dataloader)
+    for custom_property in custom_properties:
+        setattr(
+            new_dataloader,
+            custom_property,
+            getattr(dataloader, custom_property)
+        )
 
     if dataloader_is_wrapper:
         if wrapper is not None:

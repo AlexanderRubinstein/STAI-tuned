@@ -1768,3 +1768,11 @@ def get_with_assert(container, key, error_msg=None):
 
     assert key in container, error_msg
     return container[key]
+
+
+def properties_diff(first_object, second_object):
+    return (
+        set(first_object.__dict__.keys()).difference(
+            set(second_object.__dict__.keys())
+        )
+    )

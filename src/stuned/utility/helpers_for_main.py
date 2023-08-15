@@ -1,4 +1,5 @@
 import argparse
+import git
 
 
 # local modules
@@ -59,6 +60,10 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                     start_time=None,
                     config_to_log_in_wandb=experiment_config
                 ) as logger:
+
+                    repo = git.Repo(search_parent_directories=True)
+                    sha = repo.head.object.hexsha
+                    logger.log(f"Hash of current git commit: {sha}")
 
                     if check_config is not None:
                         logger.log(
