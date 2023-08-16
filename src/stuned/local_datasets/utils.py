@@ -306,13 +306,7 @@ def subsample_dataloader_randomly(dataloader, fraction, batch_size=None):
 
     new_dataloader = DataLoader(**dataloader_init_args)
 
-    custom_properties = properties_diff(dataloader, new_dataloader)
-    for custom_property in custom_properties:
-        setattr(
-            new_dataloader,
-            custom_property,
-            getattr(dataloader, custom_property)
-        )
+    add_custom_properties(dataloader, new_dataloader)
 
     if dataloader_is_wrapper:
         if wrapper is not None:
@@ -323,6 +317,16 @@ def subsample_dataloader_randomly(dataloader, fraction, batch_size=None):
                 "but it is not supported."
             )
     return new_dataloader
+
+
+def add_custom_properties(giver, taker):
+    custom_properties = properties_diff(giver, taker)
+    for custom_property in custom_properties:
+        setattr(
+            taker,
+            custom_property,
+            getattr(giver, custom_property)
+        )
 
 
 def get_dataloader_init_args_from_existing_dataloader(
@@ -485,7 +489,13 @@ def wrap_dataloader(wrappable, wrapper, **kwargs):
     if isinstance(wrappable, list):
         return ManyDataloadersWrapper(wrappable, wrapper, **kwargs)
     else:
-        return SingleDataloaderWrapper(wrappable, wrapper, **kwargs)
+        wrapped_dataloader = SingleDataloaderWrapper(
+            wrappable,
+            wrapper,
+            **kwargs
+        )
+        add_custom_properties(wrappable, wrapped_dataloader)
+        return wrapped_dataloader
 
 
 def get_generic_train_eval_dataloaders(
@@ -665,3 +675,16 @@ class ChainingIteratorsWrapper:
 
 def chain_dataloaders(dataloaders_list):
     return wrap_dataloader(dataloaders_list, ChainingIteratorsWrapper)
+
+
+class DropLastIteratorWrapper:
+
+    def __init__(self, iterator):
+        self.iterator = iterator
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        next_item = next(self.iterator)
+        return next_item[:-1]
