@@ -6,7 +6,8 @@ import git
 from .utils import (
     apply_random_seed,
     pretty_json,
-    kill_processes
+    kill_processes,
+    get_project_root_path
 )
 from .configs import (
     EXP_NAME_CONFIG_KEY,
@@ -61,7 +62,7 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                     config_to_log_in_wandb=experiment_config
                 ) as logger:
 
-                    repo = git.Repo(search_parent_directories=True)
+                    repo = git.Repo(get_project_root_path())
                     sha = repo.head.object.hexsha
                     logger.log(f"Hash of current git commit: {sha}")
 
