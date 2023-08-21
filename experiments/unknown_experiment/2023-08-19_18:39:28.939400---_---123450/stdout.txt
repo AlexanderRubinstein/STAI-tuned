@@ -1,2 +1,0 @@
-2023-08-19 18:39:28.941190 (log): Reading config for "Downloads" from
-    /home/nas/Downloads/exp_testlol.csv
