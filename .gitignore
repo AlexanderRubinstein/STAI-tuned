@@ -17,6 +17,12 @@ __pycache__/
 # C extensions
 *.so
 
+_arnas_testing
+.run
+cache
+data
+experiments
+
 # Distribution / packaging
 .Python
 build/
