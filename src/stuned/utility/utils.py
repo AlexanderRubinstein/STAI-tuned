@@ -1769,3 +1769,27 @@ def get_with_assert(container, key, error_msg=None):
 
     assert key in container, error_msg
     return container[key]
+
+
+def properties_diff(first_object, second_object):
+    return (
+        set(first_object.__dict__.keys()).difference(
+            set(second_object.__dict__.keys())
+        )
+    )
+
+
+def get_even_from_wrapped(giver, wrappable_as_property, property_to_get):
+
+    if hasattr(giver, property_to_get):
+        return getattr(
+            giver,
+            property_to_get
+        )
+    elif hasattr(giver, wrappable_as_property):
+        return get_even_from_wrapped(
+            getattr(giver, wrappable_as_property),
+            wrappable_as_property,
+            property_to_get
+        )
+    return None
