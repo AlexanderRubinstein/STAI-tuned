@@ -311,7 +311,7 @@ def process_csv_row(
     run_locally,
     log_file_path,
     spreadsheet_url,
-    worksheet_name,
+    worksheet_name, # This was none for some reason -- why?
     logger,
     lock,
     shared_rows_to_run,
@@ -510,7 +510,8 @@ def make_new_config(
 
 def replace_placeholders(csv_row, placeholder, new_value):
     for column_name, value in csv_row.items():
-        csv_row[column_name] = value.replace(placeholder, new_value)
+        if new_value is not None:
+            csv_row[column_name] = value.replace(placeholder, new_value)
 
 
 def make_task_cmd(new_config_path, conda_env, exec_path):

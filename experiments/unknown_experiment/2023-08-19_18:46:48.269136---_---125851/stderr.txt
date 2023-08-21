@@ -1,0 +1,17 @@
+2023-08-19 18:46:48.271181 (error): Traceback (most recent call last):
+  File "/home/nas/Documents/STAI-tuned/src/stuned/utility/helpers_for_main.py", line 42, in run_experiment_with_logger
+    main_args = parse_args()
+  File "/home/nas/Documents/STAI-tuned/src/stuned/utility/helpers_for_main.py", line 28, in parse_args
+    return parser.parse_args()
+  File "/usr/lib/python3.10/argparse.py", line 1845, in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+  File "/usr/lib/python3.10/argparse.py", line 1878, in parse_known_args
+    namespace, args = self._parse_known_args(args, namespace)
+  File "/usr/lib/python3.10/argparse.py", line 2119, in _parse_known_args
+    self.error(_('the following arguments are required: %s') %
+  File "/usr/lib/python3.10/argparse.py", line 2606, in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+  File "/usr/lib/python3.10/argparse.py", line 2593, in exit
+    _sys.exit(status)
+SystemExit: 2
+

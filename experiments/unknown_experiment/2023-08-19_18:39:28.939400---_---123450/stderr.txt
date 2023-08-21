@@ -1,0 +1,17 @@
+2023-08-19 18:46:43.775064 (error): Traceback (most recent call last):
+  File "/home/nas/Documents/STAI-tuned/src/stuned/utility/helpers_for_main.py", line 46, in run_experiment_with_logger
+    experiment_config = get_config(
+  File "/home/nas/Documents/STAI-tuned/src/stuned/utility/configs.py", line 67, in get_config
+    if experiment_config["use_hardcoded_config"]:
+  File "/home/nas/Documents/STAI-tuned/src/stuned/utility/configs.py", line 67, in get_config
+    if experiment_config["use_hardcoded_config"]:
+  File "_pydevd_bundle/pydevd_cython.pyx", line 1589, in _pydevd_bundle.pydevd_cython.ThreadTracer.__call__
+  File "_pydevd_bundle/pydevd_cython.pyx", line 929, in _pydevd_bundle.pydevd_cython.PyDBFrame.trace_dispatch
+  File "_pydevd_bundle/pydevd_cython.pyx", line 920, in _pydevd_bundle.pydevd_cython.PyDBFrame.trace_dispatch
+  File "_pydevd_bundle/pydevd_cython.pyx", line 317, in _pydevd_bundle.pydevd_cython.PyDBFrame.do_wait_suspend
+  File "/home/nas/.local/share/JetBrains/Toolbox/apps/PyCharm-P/ch-0/232.8660.197/plugins/python/helpers/pydev/pydevd.py", line 1160, in do_wait_suspend
+    self._do_wait_suspend(thread, frame, event, arg, suspend_type, from_this_thread)
+  File "/home/nas/.local/share/JetBrains/Toolbox/apps/PyCharm-P/ch-0/232.8660.197/plugins/python/helpers/pydev/pydevd.py", line 1175, in _do_wait_suspend
+    time.sleep(0.01)
+KeyboardInterrupt
+

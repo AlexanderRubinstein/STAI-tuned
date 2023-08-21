@@ -5,6 +5,7 @@ cache/
 inputs/
 experiment_configs/
 
+.idea
 # vscode
 launch.json
 

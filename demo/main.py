@@ -3,14 +3,11 @@ import sys
 import torch
 import wandb
 
-
 from stuned.utility.helpers_for_main import prepare_wrapper_for_experiment
 from stuned.utility.logger import (
     try_to_log_in_wandb,
     try_to_log_in_csv
 )
-
-
 def check_config_for_demo_experiment(config, config_path, logger):
     assert "initialization_type" in config
     assert "image" in config

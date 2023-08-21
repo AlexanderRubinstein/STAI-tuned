@@ -300,6 +300,7 @@ class BaseDataDSprites(BaseData):
         )
 
     def _init_helpers(self):
+        ''' '''
         self.features_bases = np.concatenate(
             (self.features_sizes[::-1].cumprod()[::-1][1:], np.array([1,]))
         )
@@ -314,7 +315,10 @@ class BaseDataDSprites(BaseData):
         return total_num_samples
 
     def _split_into_train_indices(self):
-
+        ''' Returns a set of indices that should be used for training
+            using the proportion specified in self.train_val_split; does so uniformly
+            and deterministically.
+        '''
         return set(deterministically_subsample_indices_uniformly(
             self.total_num_images,
             compute_proportion(self.train_val_split, self.total_num_images)
@@ -409,7 +413,16 @@ class BaseDataDSprites(BaseData):
         return train_indices
 
     def _create_indices_for_feature_values(self):
+        '''
+        description:
+            Creates a dictionary for both train and test splits that contains
+            indices of images that have a particular value for a particular feature.
+            E.g. for feature `color`, indices_for_feature_values['train']['color'][0] will contain
+            all indices in the training set of images that have color value `0`.
 
+            This assumes that the original ordering corresponds to the ordering
+            of the features in `self.possible_features`.
+         '''
         def create_empty_indices_for_feature_values(
             possible_features,
             features_sizes,
