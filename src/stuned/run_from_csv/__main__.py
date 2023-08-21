@@ -320,6 +320,8 @@ def process_csv_row(
     current_step,
     total_rows
 ):
+    assert worksheet_name is not None, ("worksheet_name is None; make sure you pass the worksheet name "
+                                        "using the `::` syntax in the csv file")
 
     final_cmd = None
 
@@ -510,8 +512,7 @@ def make_new_config(
 
 def replace_placeholders(csv_row, placeholder, new_value):
     for column_name, value in csv_row.items():
-        if new_value is not None:
-            csv_row[column_name] = value.replace(placeholder, new_value)
+        csv_row[column_name] = value.replace(placeholder, new_value)
 
 
 def make_task_cmd(new_config_path, conda_env, exec_path):
