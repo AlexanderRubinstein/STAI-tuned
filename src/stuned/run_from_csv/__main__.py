@@ -320,8 +320,8 @@ def process_csv_row(
     current_step,
     total_rows
 ):
-    assert worksheet_name is not None, ("worksheet_name is None; make sure you pass the worksheet name "
-                                        "using the `::` syntax in the csv file")
+    assert not spreadsheet_url or worksheet_name is not None, ("`worksheet_name` is None but this is not allowed when remote sheet is used;"
+                                                               "Make sure to pass the worksheet name using the `::` syntax in the --csv_path argument.")
 
     final_cmd = None
 
