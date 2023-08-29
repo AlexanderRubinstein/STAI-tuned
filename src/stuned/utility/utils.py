@@ -65,6 +65,7 @@ QUOTE_CHAR = '\"'
 ESCAPE_CHAR = '\\'
 INF = float("Inf")
 TOL = 1e6
+EXPONENTIAL_SYMBOLS = ('e', 'E')
 
 
 # matplotlib
@@ -998,11 +999,17 @@ def str_is_number(input_str):
         if input_str[i] == '-':
             if i == 0:
                 continue
-            elif exponential and input_str[i - 1] == 'e':
+            elif exponential and input_str[i - 1] in EXPONENTIAL_SYMBOLS:
                 continue
-        if input_str[i] == '+' and exponential and input_str[i - 1] == 'e':
+        if (
+                input_str[i] == '+'
+            and
+                exponential
+            and
+                input_str[i - 1] in EXPONENTIAL_SYMBOLS
+        ):
             continue
-        if input_str[i] == 'e' and not exponential:
+        if input_str[i] in EXPONENTIAL_SYMBOLS and not exponential:
             exponential = True
             continue
         if input_str[i] == FLOATING_POINT and not has_floating_point:
