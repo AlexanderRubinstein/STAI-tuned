@@ -745,8 +745,11 @@ def try_to_sync_csv_with_remote(logger, sync_row_zero=True):
 
 
 def try_to_log_in_wandb(logger, dict_to_log, step):
-    if logger.wandb_run is not None:
-        logger.wandb_run.log(dict_to_log, step=step)
+    wandb_run = logger.wandb_run
+    if wandb_run is not None:
+        if step <= wandb_run.step:
+            step = wandb_run.step + 1
+        wandb_run.log(dict_to_log, step=step)
 
 
 def try_to_log_in_tb(
