@@ -1770,11 +1770,21 @@ def prune_list(l, value):
 
 def get_with_assert(container, key, error_msg=None):
 
-    if error_msg is None:
-        error_msg = f"Key \"{key}\" not in container: {container}"
-
-    assert key in container, error_msg
-    return container[key]
+    if isinstance(key, str):
+        if error_msg is None:
+            error_msg = f"Key \"{key}\" not in container: {container}"
+        assert key in container, error_msg
+        return container[key]
+    else:
+        assert isinstance(key, list)
+        assert len(key) > 0
+        next_key = key[0]
+        rest_key = key[1:]
+        next_container = get_with_assert(container, next_key, error_msg)
+        if len(rest_key) == 0:
+            return next_container
+        else:
+            return get_with_assert(next_container, rest_key, error_msg)
 
 
 def properties_diff(first_object, second_object):
