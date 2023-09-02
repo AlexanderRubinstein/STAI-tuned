@@ -50,7 +50,7 @@ def demo_experiment(
         gpu_info = "no-gpu"
 
     try_to_log_in_csv(logger, "gpu_info", gpu_info)
-    try_to_log_in_csv(logger, "cpu_count", repr(os.cpu_count()))
+    try_to_log_in_csv(logger, "cpu_count", repr(len(os.sched_getaffinity(0))))
 
     for i in range(10):
         if init_type == "random":
