@@ -255,7 +255,7 @@ def get_all_slurm_jobs():
     except subprocess.TimeoutExpired:
         return None
 def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logger, spreadsheet_url, worksheet_name : str,
-                       shared_row_numbers, csv_path, gsheet_client: GspreadClient, lock_manager):
+                       shared_row_numbers, csv_path, gsheet_client: GspreadClient, lock_manager, n_jobs_total):
     # Prepare google client for writing the updates. The mechanism of writing the updates here is different
     # from the individual jobs. Here we write the updates "globally" to the worksheet as opposed to a local csv file.
     # spreadsheet_from_url = logger.get_spreadsheet_by_url(get_spreadsheet_by_urll)
@@ -344,7 +344,7 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
         # gsheet_client.upload_csvs_to_spreadsheet(spreadsheet_url, [csv_path], [worksheet_name], single_rows_per_csv=[[0]])
         # gsheet_client.upload_csvs_to_spreadsheet(spreadsheet_url, [csv_path], [worksheet_name], single_rows_per_csv=[shared_row_numbers_lst])
 
-    total_jobs = len(async_results)
+    total_jobs = n_jobs_total
     if total_jobs == 0:
         logger.log("No jobs submitted, exiting.")
         return
@@ -444,7 +444,7 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
         if gsheet_updater is not None:
             gsheet_updater.batch_update()
 
-        if running == 0 and finished_successfully + failed == submitted:
+        if finished_successfully + failed == n_jobs_total:
             logger.log("All jobs finished.")
             break
 
@@ -1049,7 +1049,7 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                     upload_csv = True
 
                     monitor_jobs_async(async_results, shared_jobs_dict, args.run_locally, logger, spreadsheet_url,
-                                       worksheet_name, shared_row_numbers, csv_path, gspread_client, lock)
+                                       worksheet_name, shared_row_numbers, csv_path, gspread_client, lock, len(starmap_args_for_row_processing))
 
             # Print all IDs
             # logger.log(f"Len of spawned jobs: {len(shared_job_objs)}")
@@ -1160,12 +1160,12 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
             return process.returncode
         else:
             # SLURM logic
-            subprocess.call(
-                run_cmd,
-                stdout=log_file,
-                stderr=log_file,
-                shell=True
-            )
+            # subprocess.call(
+            #     run_cmd,
+            #     stdout=log_file,
+            #     stderr=log_file,
+            #     shell=True
+            # )
 
             timeout_duration = 60
 
