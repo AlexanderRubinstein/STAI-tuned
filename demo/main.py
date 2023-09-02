@@ -36,6 +36,11 @@ def demo_experiment(
     random.seed(datetime.now().timestamp())
     sleep_time = random.randint(1, 15)
 
+    # report GPU info and and also CPU count
+    # do the retry factory
+    try_to_log_in_csv(logger, "gpu_info", repr(os.popen("nvidia-smi").read()))
+    try_to_log_in_csv(logger, "cpu_count", repr(os.cpu_count()))
+
     for i in range(10):
         if init_type == "random":
             colored_image[channel] = torch.randn(image_size)
@@ -70,7 +75,7 @@ def demo_experiment(
         #     )
 
         # log latest mean in csv
-        try_to_log_in_csv(logger, "mean of latest tensor", mean)
+        try_to_log_in_csv(logger, "mean of latest tensor", mean + 3)
 
         sleep(sleep_time)
         # try_to_sync_csv_with_remote(logger)

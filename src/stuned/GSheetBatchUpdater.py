@@ -27,7 +27,7 @@ class GSheetBatchUpdater:
 
     def batch_update(self, force=False):
         """Batch update the Google Sheet with the queued changes."""
-        if not force and self.last_update_status and time.time() - self.last_update < self.update_interval:
+        if len(self.queue.keys()) == 0 or (not force and (self.last_update_status and time.time() - self.last_update < self.update_interval)):
             return True
         # Convert the queue to the report_stuff_ids format
         report_stuff_ids = [(row, col, value) for row, col_value_dict in self.queue.items() for col, value in
