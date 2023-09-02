@@ -1,9 +1,11 @@
+import warnings
+
 import torch
 import numpy as np
 import random
 import os
 import yaml
-from datetime import datetime
+from datetime import datetime, timedelta
 import subprocess
 from deepdiff import DeepDiff, model as dd_model
 from hashlib import blake2b, md5
@@ -36,22 +38,40 @@ PROFILER_GROUP_BY_STACK_N = 5
 PROFILER_OUTPUT_ROW_LIMIT = 10
 DEFAULT_FILE_CHUNK_SIZE = 4096
 EMPTY_CSV_TOKEN = "?"
-DEFAULT_ENV_NAME = os.environ["DEFAULT_ENV"]
-# TEST_ENV_NAME = os.environ["TEST_ENV"]
-TEST_ENV_NAME = None # os.environ["TEST_ENV"]
+DEFAULT_ENV_NAME = os.environ["DEFAULT_ENV"] if "DEFAULT_ENV" in os.environ \
+    else None
+TEST_ENV_NAME = os.environ["TEST_ENV"] if "TEST_ENV" in os.environ else None
+# TEST_ENV_NAME = None # os.environ["TEST_ENV"]
 BASHRC_PATH = os.path.join(os.environ["HOME"], ".bashrc")
 NEW_SHELL_INIT_COMMAND = "source {} && conda activate".format(BASHRC_PATH)
 FLOATING_POINT = "."
 NAME_SEP = "_"
 NAME_NUMBER_SEPARATOR = '-'
 NULL_CONTEXT = contextlib.nullcontext()
-PROJECT_ROOT_ENV_NAME = "PROJECT_ROOT_PROVIDED_FOR_STUNED"
+PROJECT_ROOT_ENV_NAME = "PROJECT_ROOT_PROVIDED_FOR_STUNED" if "PROJECT_ROOT_PROVIDED_FOR_STUNED" in os.environ else None
 
+# If environment variables are not set, assume default values
+if DEFAULT_ENV_NAME is None:
+    DEFAULT_ENV_NAME = ""
+    # TODO A: should probably use the global logger, but it is not initialized yet?
+    os.environ["DEFAULT_ENV"] = DEFAULT_ENV_NAME
+    warnings.warn("DEFAULT_ENV_NAME is not set. Assuming empty string.")
+
+if TEST_ENV_NAME is None:
+    TEST_ENV_NAME = ""
+    os.environ["TEST_ENV"] = TEST_ENV_NAME
+    warnings.warn("TEST_ENV_NAME is not set. Assuming empty string.")
+
+if PROJECT_ROOT_ENV_NAME is None:
+    # assume the pwd is the project root
+    PROJECT_ROOT_ENV_NAME = os.getcwd()
+    # update the environment variable
+    os.environ[PROJECT_ROOT_ENV_NAME] = PROJECT_ROOT_ENV_NAME
+    warnings.warn(f"PROJECT_ROOT_PROVIDED_FOR_STUNED is not set. Assuming `{PROJECT_ROOT_ENV_NAME}`.")
 
 DEFAULT_SLEEP_TIME = 10
-DEFAULT_NUM_ATTEMTPS = 10
+DEFAULT_NUM_ATTEMTPS = 50
 MAX_RETRIES_ERROR_MSG = "Maximum number of retries failed."
-
 
 DEFAULT_INDENT_IN_JSON = 2
 
@@ -110,6 +130,13 @@ def apply_random_seed(random_seed):
 def get_current_time():
     return datetime.now()
 
+
+def current_time_formatted():
+    # Get the current date and time
+    now = datetime.now()
+
+    # Format the date and time as a string
+    return now.strftime("%Y-%m-%d %H:%M:%S")
 
 def raise_unknown(param, value, location=""):
     exception_msg = "Unknown {}".format(param)
@@ -1793,3 +1820,35 @@ def get_even_from_wrapped(giver, wrappable_as_property, property_to_get):
             property_to_get
         )
     return None
+
+def time_since(timestamp_str, format='%Y-%m-%d %H:%M:%S'):
+    now = datetime.now()
+    timestamp = datetime.strptime(timestamp_str, format)
+    delta = now - timestamp
+
+    if delta < timedelta(seconds=1):
+        return "just now"
+    if delta < timedelta(minutes=1):
+        return f"{delta.seconds}s ago"
+    if delta < timedelta(hours=1):
+        return f"{delta.seconds // 60}m ago"
+    if delta < timedelta(days=1):
+        return f"{delta.seconds // 3600}h ago"
+    if delta < timedelta(weeks=1):
+        return f"{delta.days}d ago"
+    if delta < timedelta(weeks=4):
+        return f"{delta.days // 7}w ago"
+    return f"{delta.days // 30}mo ago"
+
+def update_gsheet(updater, column_num_status, column_num_last_update_monitor, row_numbers):
+    # Update the status column with "Processing"
+    for row in row_numbers:
+        updater.add_to_queue(row, column_num_status, "Processing")
+
+    # Update the last update column with the current timestamp
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    for row in row_numbers:
+        updater.add_to_queue(row, column_num_last_update_monitor, current_time)
+
+    # Batch update the cells
+    updater.batch_update()

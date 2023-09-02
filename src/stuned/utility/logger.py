@@ -54,7 +54,7 @@ from .utils import (
     get_project_root_path,
     compute_tensor_cumsums,
     itself_and_lower_upper_case,
-    get_with_assert
+    get_with_assert, current_time_formatted
 )
 
 
@@ -90,10 +90,13 @@ ERROR_PREFIX = "(error)"
 MAX_LINE_LENGTH = 80
 SEPARATOR = "".join(["="] * MAX_LINE_LENGTH)
 
-
 STATUS_CSV_COLUMN = "status"
 RUN_FOLDER_CSV_COLUMN = "run_folder"
 WALLTIME_COLUMN = "walltime"
+
+FIRST_REPORT_TIME_COLUMN = "starttime"
+LAST_REPORT_TIME_COLUMN = "endtime"
+
 
 SUBMITTED_STATUS = "Submitted"
 RUNNING_STATUS = "Running"
@@ -183,6 +186,7 @@ SPREADSHEETS_URL = "https://docs.google.com/spreadsheets"
 WORKSHEET_SEPARATOR = "::"
 DELTA_PREFIX = "delta"
 SLURM_PREFIX = "slurm"
+HTTP_PREFIX = "http"
 PREFIX_SEPARATOR = ":"
 OLD_PREFIX = "Old "
 PREV_RUN_FOLDER_KEY = "prev_run_folder"
@@ -266,6 +270,9 @@ class RedneckLogger(BaseLogger):
         self.gdrive_daemon = None
         self.stdout_lock = None
         self.stderr_lock = None
+
+        # for keeping track columns
+        self.self_columns = set()
 
     def store(self, name, msg):
         assert isinstance(msg, str)
@@ -364,6 +371,9 @@ class RedneckLogger(BaseLogger):
             )
 
     def log_csv(self, column_value_pairs):
+        if self.csv_output is not None:
+            for column_name, value in column_value_pairs:
+                self.self_columns.add(column_name)
 
         retrier_factory(self)(log_csv_for_concurrent)(
             self.csv_output[PATH_KEY],
@@ -406,7 +416,7 @@ class RedneckLogger(BaseLogger):
                     descripion,
                     current_step,
                     total_steps,
-                    round(100 * float(current_step / total_steps))
+                    round(100 * float(current_step / (max(1, total_steps))))
                 ),
                 carriage_return=(current_step != total_steps)
             )
@@ -689,6 +699,7 @@ def handle_exception(logger, exception=None):
         logger,
         [
             (STATUS_CSV_COLUMN, FAIL_STATUS),
+            # This is questionable? I'd leave it as 0 @Alex
             (WHETHER_TO_RUN_COLUMN, "1")
         ]
     )
@@ -707,15 +718,24 @@ def try_to_log_in_csv(logger, column_name, value):
     try_to_log_in_csv_in_batch(logger, [(column_name, value)])
 
 
-def try_to_log_in_csv_in_batch(logger, column_value_pairs):
+def try_to_log_in_csv_in_batch(logger : RedneckLogger, column_value_pairs):
 
     if logger.csv_output is not None:
         logger.log_csv(column_value_pairs)
 
+def try_to_sync_csv_with_remote(logger, sync_row_zero=True, report_aux=True, update_only_local_cols=False):
+    '''
 
-def try_to_sync_csv_with_remote(logger, sync_row_zero=True):
+    :param logger:
+    :param sync_row_zero: if True, syncs row 0 of the csv file
+    :param report_aux: if True, reports auxiliary info about the run:
+        1. timestamp of the last log
+    '''
 
     if logger.gspread_client is not None:
+
+        if report_aux:
+            try_to_log_in_csv(logger, LAST_REPORT_TIME_COLUMN, current_time_formatted())
 
         worksheet_names = [logger.csv_output["worksheet_name"]] \
             if logger.csv_output["worksheet_name"] is not None \
@@ -733,14 +753,14 @@ def try_to_sync_csv_with_remote(logger, sync_row_zero=True):
                 spreadsheet_url,
                 csv_files,
                 worksheet_names=worksheet_names,
-                single_rows_per_csv=[0]
+                single_rows_per_csv=[0],
             )
 
         logger.gspread_client.upload_csvs_to_spreadsheet(
             spreadsheet_url,
             csv_files,
             worksheet_names=worksheet_names,
-            single_rows_per_csv=single_rows_per_csv
+            single_rows_per_csv=single_rows_per_csv,
         )
 
 
@@ -847,7 +867,9 @@ def redneck_logger_context(
             [
                 (WHETHER_TO_RUN_COLUMN, "0"),
                 (STATUS_CSV_COLUMN, RUNNING_STATUS),
-                (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file))
+                (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file)),
+                (FIRST_REPORT_TIME_COLUMN, get_current_time()),
+                (LAST_REPORT_TIME_COLUMN, get_current_time()),
             ]
         )
 
@@ -1213,12 +1235,15 @@ class GspreadClient:
     def __init__(
         self,
         logger,
-        gspread_credentials
+        gspread_credentials,
+        cache_spreadsheet = False
     ):
         self.logger = logger
         self.gspread_credentials = gspread_credentials
         self.client = self._create_client()
 
+        self.cache_spreadsheet = cache_spreadsheet
+        self.opened_spreadsheet = None
     @retrier_factory_with_auto_logger()
     def _create_client(self):
 
@@ -1244,16 +1269,21 @@ class GspreadClient:
 
     @retrier_factory_with_auto_logger()
     def get_spreadsheet_by_url(self, spreadsheet_url):
-
+        if self.opened_spreadsheet is not None and self.cache_spreadsheet:
+            return self.opened_spreadsheet
         if spreadsheet_url is None:
 
             spreadsheet = self.client.create(
                 DEFAULT_SPREADSHEET_NAME + '_' + str(get_current_time())
             )
 
+            self.opened_spreadsheet = spreadsheet
+
             return spreadsheet
         else:
-            return self.client.open_by_url(spreadsheet_url)
+            self.opened_spreadsheet = self.client.open_by_url(spreadsheet_url)
+            return self.opened_spreadsheet
+
 
     @retrier_factory_with_auto_logger()
     def upload_csvs_to_spreadsheet(
@@ -1316,7 +1346,7 @@ class GspreadClient:
 
             with make_file_lock(csv_file_path):
 
-                if not worksheet_name in existing_worksheets:
+                if worksheet_name not in existing_worksheets:
                     spreadsheet.add_worksheet(
                         title=worksheet_name,
                         rows=DEFAULT_SPREADSHEET_ROWS,
@@ -1336,17 +1366,58 @@ class GspreadClient:
 
                 csv_file_as_list = list(csv.reader(open(csv_file_path)))
 
-                a1_range_to_update = worksheet_name
-                if single_row is not None:
-                    gsheets_row = str(single_row + 1)
-                    a1_range_to_update += '!' + gsheets_row + ':' + gsheets_row
-                    csv_file_as_list = [csv_file_as_list[single_row]]
+                if single_rows_per_csv and single_rows_per_csv[i]:
+                    # Get the sheetId for the worksheet
+                    worksheet_obj = spreadsheet.worksheet(worksheet_name)
+                    sheet_id = worksheet_obj.id
 
-                spreadsheet.values_update(
-                    a1_range_to_update,
-                    params={'valueInputOption': 'USER_ENTERED'},
-                    body={'values': csv_file_as_list}
-                )
+
+                    rows_to_update = single_rows_per_csv[i]
+
+                    if not isinstance(rows_to_update, list):
+                        rows_to_update = [rows_to_update]
+
+                    requests = []
+                    for row_num in rows_to_update:
+                        a1_range_to_update = f"{worksheet_name}!{row_num + 1}:{row_num + 1}"
+                        values_to_update = [csv_file_as_list[row_num]]
+
+                        request = {
+                            "updateCells": {
+                                "range": {
+                                    "sheetId": sheet_id,
+                                    "startRowIndex": row_num,
+                                    "endRowIndex": row_num + 1,
+                                    "startColumnIndex": 0,
+                                    "endColumnIndex": len(values_to_update[0])
+                                },
+                                "rows": [{
+                                    "values": [{"userEnteredValue": {"stringValue": value}} for value in
+                                               values_to_update[0]]
+                                }],
+                                "fields": "userEnteredValue"
+                            }
+                        }
+                        requests.append(request)
+
+                        # Now, batch all the requests together
+                    body = {
+                        "requests": requests
+                    }
+                    spreadsheet.batch_update(body)
+
+
+                # a1_range_to_update = worksheet_name
+                # if single_row is not None:
+                #     gsheets_row = str(single_row + 1)
+                #     a1_range_to_update += '!' + gsheets_row + ':' + gsheets_row
+                #     csv_file_as_list = [csv_file_as_list[single_row]]
+                #
+                # spreadsheet.values_update(
+                #     a1_range_to_update,
+                #     params={'valueInputOption': 'USER_ENTERED'},
+                #     body={'values': csv_file_as_list}
+                # )
 
         return spreadsheet.url
 
@@ -1385,13 +1456,31 @@ class GspreadClient:
         return result
 
 
+# TODO: find where to put this function -- kind of works with GSheetClient, but has no deps. so makes
+# sense for it to be outside.
+def get_or_create_column(worksheet, column_name):
+    """Get the column number if it exists, otherwise create it and return the new column number."""
+    column_number = None
+    try:
+        # Try to find the column
+        column_number = worksheet.find(column_name).col
+    except (gspread.exceptions.CellNotFound, AttributeError):
+        # If the column doesn't exist, append it and get its column number
+        all_values = worksheet.get_all_values()
+        max_len = max(len(row) for row in all_values) + 1
+        worksheet.update_cell(1, max_len, column_name)
+        column_number = max_len
+    return column_number
+
+
 def make_gspread_client(
     logger,
     gspread_credentials=DEFAULT_GOOGLE_CREDENTIALS_PATH
 ):
     return GspreadClient(
         logger,
-        gspread_credentials=gspread_credentials
+        gspread_credentials=gspread_credentials,
+        cache_spreadsheet=True
     )
 
 

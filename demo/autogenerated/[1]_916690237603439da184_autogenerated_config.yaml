@@ -1,0 +1,20 @@
+image:
+  color: red
+  shape:
+  - 64
+  - 64
+initialization_type: 1
+logging:
+  gdrive_storage_folder: https://drive.google.com/drive/u/0/folders/12_wdaaWk_bCRpEnbO5K8cEWiClDp_mtc
+  output_csv:
+    path: /home/nas/Documents/STAI-tuned/inputs/https:(slash)(slash)docs.google.com(slash)spreadsheets(slash)d(slash)1F9iW8REYZzpzA8lDEwPLcrCU52PCJgnKf9aUCHwNVnU(slash)edit/RunLocal.csv
+    row_number: 1
+    spreadsheet_url: https://docs.google.com/spreadsheets/d/1F9iW8REYZzpzA8lDEwPLcrCU52PCJgnKf9aUCHwNVnU/edit
+    worksheet_name: RunLocal
+  use_tb: false
+  use_wandb: true
+  wandb:
+    netrc_path: ~/.netrc
+params:
+  random_seed: 42
+use_hardcoded_config: false

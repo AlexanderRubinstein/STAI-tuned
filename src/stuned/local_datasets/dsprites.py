@@ -8,6 +8,8 @@ import pickle
 import sys
 import os
 
+import pydevd_pycharm
+pydevd_pycharm.settrace('localhost', port=11112, stdoutToServer=True, stderrToServer=True)
 
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))

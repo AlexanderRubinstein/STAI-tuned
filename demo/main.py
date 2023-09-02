@@ -1,12 +1,16 @@
 import os
+import random
 import sys
+from datetime import datetime
+from time import sleep
+
 import torch
 import wandb
 
 from stuned.utility.helpers_for_main import prepare_wrapper_for_experiment
 from stuned.utility.logger import (
     try_to_log_in_wandb,
-    try_to_log_in_csv
+    try_to_log_in_csv, try_to_sync_csv_with_remote
 )
 def check_config_for_demo_experiment(config, config_path, logger):
     assert "initialization_type" in config
@@ -28,6 +32,9 @@ def demo_experiment(
         channel = 2
 
     init_type = experiment_config["initialization_type"]
+    # put random seed based on the timestamp of the experiment unix time
+    random.seed(datetime.now().timestamp())
+    sleep_time = random.randint(1, 15)
 
     for i in range(10):
         if init_type == "random":
@@ -54,17 +61,35 @@ def demo_experiment(
             step=i
         )
 
+        # log like 20 metrics to csv
+        # for j in range(20):
+        #     try_to_log_in_csv(
+        #         logger,
+        #         f"metric_{j}",
+        #         i
+        #     )
+
         # log latest mean in csv
         try_to_log_in_csv(logger, "mean of latest tensor", mean)
+
+        sleep(sleep_time)
+        # try_to_sync_csv_with_remote(logger)
 
         colored_image[:, :, :] = 0
 
 
-def main():
+
+def main(config):
+    # python fire library
+    # try:
+    #     import pydevd_pycharm
+    #     pydevd_pycharm.settrace('localhost', port=11112, stdoutToServer=True, stderrToServer=True)
+    # except:
+    #     pass
+    # logger = job_manager.begin(config=config)
     prepare_wrapper_for_experiment(check_config_for_demo_experiment)(
         demo_experiment
     )()
 
-
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
