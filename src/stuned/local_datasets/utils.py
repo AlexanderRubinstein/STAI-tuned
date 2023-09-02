@@ -22,8 +22,8 @@ from typing import (
 
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utility.logger import make_logger
-from utility.utils import (
+from stuned.utility.logger import make_logger
+from stuned.utility.utils import (
     remove_filename_extension,
     remove_file_or_folder,
     remove_all_but_subdirs,

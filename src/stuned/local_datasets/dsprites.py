@@ -13,7 +13,7 @@ pydevd_pycharm.settrace('localhost', port=11112, stdoutToServer=True, stderrToSe
 
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from local_datasets.utils import (
+from stuned.local_datasets.utils import (
     EMPTY_URL,
     fetch_data,
     assert_dataset_as_file,
@@ -21,9 +21,9 @@ from local_datasets.utils import (
     convert_dataset_to_tensor_generator,
     make_or_load_from_cache
 )  # slow
-from local_datasets.base import BaseData
-from utility.logger import make_logger
-from utility.utils import (
+from stuned.local_datasets.base import BaseData
+from stuned.utility.logger import make_logger
+from stuned.utility.utils import (
     raise_unknown,
     coefficients_for_bases,
     log_or_print,
@@ -31,7 +31,7 @@ from utility.utils import (
     deterministically_subsample_indices_uniformly,
     get_project_root_path
 )
-from local_datasets.transforms import (
+from stuned.local_datasets.transforms import (
     make_transforms
 )
 sys.path.pop(0)

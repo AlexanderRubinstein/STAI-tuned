@@ -1,8 +1,8 @@
 import time
 from collections import defaultdict
 
-from utility.logger import log_csv_for_concurrent
-from utility.utils import retrier_factory
+from stuned.utility.logger import log_csv_for_concurrent
+from stuned.utility.utils import retrier_factory
 
 
 class GSheetBatchUpdater:

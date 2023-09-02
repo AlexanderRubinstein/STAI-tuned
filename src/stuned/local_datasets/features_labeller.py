@@ -8,8 +8,8 @@ import os
 
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utility.logger import make_logger
-from utility.utils import (
+from stuned.utility.logger import make_logger
+from stuned.utility.utils import (
     NAME_SEP,
     raise_unknown,
     log_or_print,
@@ -17,16 +17,16 @@ from utility.utils import (
     deterministic_subset,
     compute_proportion
 )
-from local_datasets.dsprites import (
+from stuned.local_datasets.dsprites import (
     make_dsprites_base_data,
     load_dsprites_base_data
 )
-from local_datasets.utils import (
+from stuned.local_datasets.utils import (
     make_or_load_from_cache,
     randomly_subsampled_dataloader,
     chain_dataloaders
 )
-from local_datasets.base import BaseData
+from stuned.local_datasets.base import BaseData
 sys.path.pop(0)
 
 

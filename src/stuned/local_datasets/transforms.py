@@ -7,16 +7,16 @@ import copy
 
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utility.utils import (
+from stuned.utility.utils import (
     raise_unknown,
     parse_name_and_number
 )
-from utility.imports import (
+from stuned.utility.imports import (
     FROM_CLASS_KEY,
     make_from_class_ctor,
     update_enums_in_config
 )
-from local_datasets.utils import (
+from stuned.local_datasets.utils import (
     randomly_subsample_indices_uniformly
 )
 sys.path.pop(0)
