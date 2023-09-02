@@ -945,7 +945,8 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                             args.run_locally,
                             shared_jobs_dict,
                             row_id,
-                            lock
+                            lock,
+                            logger
                         )
                         for run_cmd, row_id in zip(shared_rows_to_run, shared_row_numbers)
                     ]
@@ -1010,7 +1011,7 @@ def update_job_status(process, shared_jobs_dict, row_id, lock_manager):
         # print(f"After update: {shared_jobs_dict[row_id]}")
 
 
-def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lock_manager):
+def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lock_manager, logger):
     """
 
         row_id is used for identifying the job in the spreadsheet and for updating the status of the job in the shared memory.
@@ -1021,7 +1022,7 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
         return "Job Stopped"
 
     def signal_handler(sig, frame):
-        print('KeyboardInterrupt caught, but continuing...')
+        logger.log('KeyboardInterrupt caught, but continuing...')
 
     # Register the signal handler
     signal.signal(signal.SIGINT, signal_handler)
@@ -1052,7 +1053,7 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
             while process.poll() is None:
                 # Check the run_jobs_flag during execution]
                 if not run_jobs_flag.value:
-                    print(f"Stopping job with row ID: {row_id}")
+                    logger.log(f"Stopping job with row ID: {row_id}")
                     # Send a SIGINT signal for graceful exit
                     process.send_signal(signal.SIGINT)
 
@@ -1083,24 +1084,28 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
                 shell=True
             )
 
-            output = subprocess.check_output(run_cmd, stderr=subprocess.STDOUT, shell=True).decode('utf-8')
+            timeout_duration = 60
 
-            # Extract the job ID from the output
-            job_id = None
-            retry_count = 0
-            max_retries = 50  # Number of retries
-            retry_interval = 2  # Sleep interval in seconds
+            try:
+                output = subprocess.check_output(run_cmd, stderr=subprocess.STDOUT, shell=True,
+                                                 timeout=timeout_duration).decode('utf-8')
+                job_id = output.strip()
+                logger.log(f"Job ID: {job_id}")
+            except subprocess.CalledProcessError as e:
+                print(f"Command failed with error: {e.output.decode('utf-8')}")
+            except subprocess.TimeoutExpired:
+                print(f"The command took longer than {timeout_duration} seconds to complete.")
 
-            while not job_id and retry_count < max_retries:
-                for line in output.split('\n'):
-                    if "Submitted batch job" in line:
-                        job_id = line.split()[-1]
-                        break
-                if not job_id:
-                    print(f"Job ID not found in output. Retrying in {retry_interval} seconds.")
-                    time.sleep(retry_interval)
-                    output = subprocess.check_output(run_cmd, stderr=subprocess.STDOUT, shell=True).decode('utf-8')
-                    retry_count += 1
+            with submitted_jobs_lock:
+                submitted_jobs.value += 1
+
+            with lock_manager:
+                shared_jobs_dict[row_id] = {
+                    "job_id": job_id,
+                    "status": "submitted",
+                }
+
+            return 0
 
 
 def expand_gsheet(csv_path, spreadsheet_url, worksheet_name, gspread_client):
