@@ -2,6 +2,7 @@ import argparse
 import datetime
 import os
 import copy
+import re
 import shlex
 import signal
 import time
@@ -1171,7 +1172,14 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
             try:
                 output = subprocess.check_output(run_cmd, stderr=subprocess.STDOUT, shell=True,
                                                  timeout=timeout_duration).decode('utf-8')
-                job_id = output.strip()
+                numbers = re.findall(r"\d+", output)
+                job_id = ''.join(numbers)
+
+                if job_id:
+                    logger.log(f"Submitted a job with ID: {job_id}")
+                else:
+                    logger.log("Failed to extract job ID from the output.")
+
                 logger.log(f"Job ID: {job_id}")
             except subprocess.CalledProcessError as e:
                 print(f"Command failed with error: {e.output.decode('utf-8')}")
