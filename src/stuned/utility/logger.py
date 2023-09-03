@@ -831,7 +831,8 @@ def redneck_logger_context(
             logger.output_folder,
             "local_copy_" + os.path.basename(csv_path)
         )
-        shutil.copy(csv_path, local_csv_path)
+        with make_file_lock(csv_path):
+            shutil.copy(csv_path, local_csv_path)
         output_config[PATH_KEY] = local_csv_path
         logger.set_csv_output(
             output_config
