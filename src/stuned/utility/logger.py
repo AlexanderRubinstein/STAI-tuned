@@ -26,6 +26,7 @@ from tempfile import NamedTemporaryFile
 from .utils import (
     QUOTE_CHAR,
     SYSTEM_PLATFORM,
+    NULL_CONTEXT,
     get_current_time,
     get_current_run_folder,
     extract_profiler_results,
@@ -365,12 +366,13 @@ class RedneckLogger(BaseLogger):
 
     def log_csv(self, column_value_pairs):
 
-        retrier_factory(self)(log_csv_for_concurrent)(
+        log_csv_for_concurrent(
             self.csv_output[PATH_KEY],
             [
                 (self.csv_output[ROW_NUMBER_KEY], column_name, value)
                     for column_name, value in column_value_pairs
-            ]
+            ],
+            concurrent=False
         )
 
     def log_separator(self):
@@ -819,6 +821,22 @@ def redneck_logger_context(
     start_time=None,
     config_to_log_in_wandb=None
 ):
+
+    def set_up_local_csv(logger, output_config):
+
+        csv_path = get_with_assert(output_config, PATH_KEY)
+        if not os.path.exists(csv_path):
+            touch_file(csv_path)
+        local_csv_path = os.path.join(
+            logger.output_folder,
+            "local_copy_" + os.path.basename(csv_path)
+        )
+        shutil.copy(csv_path, local_csv_path)
+        output_config[PATH_KEY] = local_csv_path
+        logger.set_csv_output(
+            output_config
+        )
+
     if start_time is None:
         start_time = get_current_time()
 
@@ -837,14 +855,8 @@ def redneck_logger_context(
     # add csv folder if exists
     if OUTPUT_CSV_KEY in logging_config:
         output_config = logging_config[OUTPUT_CSV_KEY]
-        logger.log(f"Output_config:\n{output_config}", auto_newline=True)
-        assert PATH_KEY in output_config
-        output_csv_path = output_config[PATH_KEY]
-        if not os.path.exists(output_csv_path):
-            touch_file(output_csv_path)
-        logger.set_csv_output(
-            logging_config[OUTPUT_CSV_KEY]
-        )
+        set_up_local_csv(logger, output_config)
+        logger.log(f"Output_config:\n{logger.csv_output}", auto_newline=True)
         try_to_log_in_csv_in_batch(
             logger,
             [
@@ -1587,19 +1599,26 @@ def get_gdrive_file_by_url(gdrive_client, remote_url):
 
 def log_csv_for_concurrent(
     csv_path,
-    row_col_value_triplets
+    row_col_value_triplets,
+    concurrent=True
 ):
-    lock = make_file_lock(csv_path)
+
+    if concurrent:
+        lock = make_file_lock(csv_path)
+        row_col_value_triplets_clean = []
+    else:
+        lock = NULL_CONTEXT
     remove_chars = [QUOTE_CHAR]
-    row_col_value_triplets_clean = []
+
     with lock:
         for csv_row_number, column_name, value in row_col_value_triplets:
 
             column_name = as_str_for_csv(column_name, remove_chars)
             value = as_str_for_csv(value, remove_chars)
-            row_col_value_triplets_clean.append(
-                (csv_row_number, column_name, value)
-            )
+            if concurrent:
+                row_col_value_triplets_clean.append(
+                    (csv_row_number, column_name, value)
+                )
 
             write_into_csv_with_column_names(
                 csv_path,
@@ -1609,17 +1628,22 @@ def log_csv_for_concurrent(
                 replace_nulls=True,
                 use_lock=False
             )
-    time.sleep(TIME_TO_LOSE_LOCK_IF_CONCURRENT)
-    with lock:
-        csv_as_dict = read_csv_as_dict(csv_path)
 
-    for csv_row_number, column_name, value in row_col_value_triplets_clean:
-        assert_two_values_are_close(
-            csv_as_dict.get(csv_row_number).get(
-                column_name
-            ),
-            value
-        )
+    if concurrent:
+        time.sleep(TIME_TO_LOSE_LOCK_IF_CONCURRENT)
+        with lock:
+            csv_as_dict = read_csv_as_dict(csv_path)
+
+        for csv_row_number, column_name, value in row_col_value_triplets_clean:
+            found_value = csv_as_dict.get(csv_row_number, {}).get(column_name)
+            if is_number(value):
+                assert is_number(found_value)
+                value = float(value)
+                found_value = float(found_value)
+            assert_two_values_are_close(
+                found_value,
+                value
+            )
 
 
 class RedneckProgressBar:

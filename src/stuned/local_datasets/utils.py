@@ -38,7 +38,7 @@ from utility.utils import (
     show_images,
     append_dict,
     compute_proportion,
-    properties_diff
+    add_custom_properties
 )
 sys.path.pop(0)
 
@@ -317,16 +317,6 @@ def subsample_dataloader_randomly(dataloader, fraction, batch_size=None):
                 "but it is not supported."
             )
     return new_dataloader
-
-
-def add_custom_properties(giver, taker):
-    custom_properties = properties_diff(giver, taker)
-    for custom_property in custom_properties:
-        setattr(
-            taker,
-            custom_property,
-            getattr(giver, custom_property)
-        )
 
 
 def get_dataloader_init_args_from_existing_dataloader(
