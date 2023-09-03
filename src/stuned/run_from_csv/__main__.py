@@ -33,7 +33,8 @@ from stuned.utility.utils import (
     normalize_path,
     check_duplicates,
     expand_csv,
-    retrier_factory
+    retrier_factory,
+    is_number
 )
 from stuned.utility.configs import (
     AUTOGEN_PREFIX,
@@ -87,6 +88,7 @@ MONITOR_LAST_UPDATE_COLUMN = "last_update_monitor"
 use_shared_memory = sys.version_info >= (3, 8, 3)
 if use_shared_memory:
     pass
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -254,7 +256,43 @@ def get_all_slurm_jobs():
         return {}
     except subprocess.TimeoutExpired:
         return None
-def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logger, spreadsheet_url, worksheet_name : str,
+
+
+def get_slurm_jobs_stats(jobs_ids, logger):
+    # Convert the list of job IDs to a comma-separated string
+    job_ids_str = ','.join(map(str, jobs_ids))
+
+    # Define the sacct command with the desired format
+    cmd = [
+        'sacct',
+        '-j', job_ids_str,
+        '--format=JobID,State,ExitCode',
+        '--noheader'
+    ]
+
+    # Execute the command and capture the output
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        logger.log("Warning: sacct command timed out! Will repeat after sleeping")
+        return None
+    # Split the output into lines and then into columns
+    lines = result.stdout.strip().split('\n')
+    job_stats = {}
+    for line in lines:
+        columns = line.split()
+        # Check if the line contains the main job info (not the steps)
+        if len(columns) == 3 and '+' not in columns[0]:
+            job_id, state, exit_code = columns
+            job_stats[int(job_id)] = {
+                'State': state,
+                'ExitCode': exit_code
+            }
+
+    return job_stats
+
+
+def monitor_jobs_async(async_results, shared_jobs_dict, run_locally: bool, logger, spreadsheet_url, worksheet_name: str,
                        shared_row_numbers, csv_path, gsheet_client: GspreadClient, lock_manager, n_jobs_total):
     # Prepare google client for writing the updates. The mechanism of writing the updates here is different
     # from the individual jobs. Here we write the updates "globally" to the worksheet as opposed to a local csv file.
@@ -367,7 +405,8 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
                 job_info = [job.get("exit_code", None) for job in shared_jobs_dict.values()]
 
                 # Identify rows that have updates
-                updated_rows = [row_id for row_id, job in shared_jobs_dict.items() if local_jobs_dict.get(row_id) != job]
+                updated_rows = [row_id for row_id, job in shared_jobs_dict.items() if
+                                local_jobs_dict.get(row_id) != job]
 
                 # For each updated row, add the necessary updates to the gsheet_updater queue
                 for row_id in updated_rows:
@@ -378,10 +417,13 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
                                                     f"{job['exit_code']}")
         else:
             # Check SLURM cluster for running jobs and their status
-            all_jobs = get_all_slurm_jobs()
+            job_ids = [job["job_id"] for job in shared_jobs_dict.values()]
 
-            if all_jobs is None:
-                logger.log("Warning: squeue command timed out! Will repeat after sleeping")
+            # Check SLURM cluster for jobs and their status
+            all_jobs_stats = get_slurm_jobs_stats(job_ids, logger)
+
+            if all_jobs_stats is None:
+                logger.log("Warning: sacct command timed out! Will repeat after sleeping")
                 time.sleep(current_sleep_duration)
                 continue  # or decide on another action
 
@@ -390,20 +432,37 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
                 shared_jobs_copy = dict(shared_jobs_dict)
 
             for row_id, job in shared_jobs_copy.items():
-                slurm_status = all_jobs.get(job["job_id"], None)  # Using main_pid as the SLURM job ID
-                if slurm_status == 'R':
-                    job_status = 'running'
-                elif slurm_status in ['CG', 'C']:
-                    job_status = 'completed'
-                elif slurm_status == 'PD':
-                    job_status = 'pending'
+                job_stat = all_jobs_stats.get(job["job_id"], None)
+                if job_stat:
+                    slurm_status = job_stat["State"]
+                    exit_code = job_stat["ExitCode"]
                 else:
-                    job_status = 'unknown'
+                    slurm_status = None
+                    exit_code = None
 
-                # Update the status in the shared_jobs_dict
+                if slurm_status == 'R':
+                    job_status = 'Running'
+                elif slurm_status in ['CG', 'C', 'COMPLETED']:
+                    job_status = 'Completed'
+                elif slurm_status == 'PD':
+                    job_status = 'Pending'
+                elif slurm_status == 'FAILED':
+                    job_status = 'Failed'
+                elif slurm_status == 'CANCELLED':
+                    job_status = 'Cancelled'
+                elif slurm_status is None and job["status"] == "running":
+                    job_status = 'Completed'  # Assuming that if the job isn't in the queue and was previously running, it's now completed
+                else:
+                    job_status = 'Unknown'
+
+                # Update the status and exit code in the shared_jobs_dict
                 with lock_manager:
+                    shared_dict_row_cp = shared_jobs_dict[row_id].copy()
                     if shared_jobs_dict[row_id]["status"] != job_status:
-                        shared_jobs_dict[row_id]["status"] = job_status
+                        shared_dict_row_cp["status"] = job_status
+                    if exit_code:
+                        shared_dict_row_cp["exit_code"] = exit_code
+                    shared_jobs_dict[row_id] = shared_dict_row_cp
 
             # Identify rows that have updates
             updated_rows = [row_id for row_id, job in shared_jobs_dict.items() if local_jobs_dict.get(row_id) != job]
@@ -423,9 +482,9 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
 
         # Count the statuses
         submitted = submitted_jobs.value
-        running = job_status.count("running")
-        finished_successfully = job_status.count("success")
-        failed = job_status.count("failed")
+        running = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Running")
+        finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
+        failed = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Failed")
 
         # Display progress and status
         last_update_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -524,6 +583,7 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
     # Make sure to push the updates, if there were any
     if gsheet_updater is not None:
         gsheet_updater.batch_update(force=True)
+
 
 # def monitor_jobs_async_old(async_results, shared_memory_names_or_pids, run_locally : bool, logger, spreadsheet_url, worksheet_name : str,
 #                        shared_row_numbers, csv_path, gsheet_client: GspreadClient):
@@ -790,14 +850,14 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
 
 
 #
-# 
+#
 # def monitor_jobs_async(async_results, shared_memory_names_or_pids, run_locally, logger):
 #     total_jobs = len(shared_memory_names_or_pids)
 #     if total_jobs == 0:
 #         return
-# 
+#
 #     job_status = ["not_started" for _ in range(total_jobs)]
-# 
+#
 #     while True:
 #         for idx, result in enumerate(async_results):
 #             if not result.ready() and job_status[idx] == "not_started":
@@ -808,27 +868,27 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally : bool, logg
 #                     job_status[idx] = "finished_successfully"
 #                 else:
 #                     job_status[idx] = f"finished_with_error_{exit_code}"
-# 
+#
 #         not_started = sum(1 for status in job_status if status == "not_started")
 #         running = sum(1 for status in job_status if status == "running")
 #         finished = total_jobs - not_started - running
-# 
+#
 #         # Display progress bar for completed jobs
 #         logger.progress(
 #             "Jobs Completion Progress",
 #             finished,
 #             total_jobs
 #         )
-# 
+#
 #         # Display number of jobs not started and running
 #         logger.log(f"Number of jobs not started: {not_started}")
 #         logger.log(f"Number of running jobs: {running}")
-# 
+#
 #         if running == 0 and not_started == 0:
 #             break
-# 
+#
 #         time.sleep(30)  # Check every 30 seconds
-# 
+#
 #
 # def monitor_jobs(shared_memory_names_or_pids, run_locally, logger):
 #     """ Monitor the jobs. Depending on the Python version, `shared_memory_names_or_pids` corresponds to shared memory names or PIDs """
@@ -1049,7 +1109,8 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                     upload_csv = True
 
                     monitor_jobs_async(async_results, shared_jobs_dict, args.run_locally, logger, spreadsheet_url,
-                                       worksheet_name, shared_row_numbers, csv_path, gspread_client, lock, len(starmap_args_for_row_processing))
+                                       worksheet_name, shared_row_numbers, csv_path, gspread_client, lock,
+                                       len(starmap_args_for_job_submitting))
 
             # Print all IDs
             # logger.log(f"Len of spawned jobs: {len(shared_job_objs)}")
@@ -1075,10 +1136,12 @@ def get_pool_size(iterable_len):
         MAX_PROCESSES
     )
 
+
 # TODO: move these into the main function
 run_jobs_flag = mp.Value('i', 1)  # 1 means jobs should run, 0 means they shouldn't
 submitted_jobs = mp.Value('i', 0)
 submitted_jobs_lock = mp.Lock()
+
 
 def update_job_status(process, shared_jobs_dict, row_id, lock_manager):
     """Update the job status and exit code in the shared dictionary."""
@@ -1173,7 +1236,7 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
                 output = subprocess.check_output(run_cmd, stderr=subprocess.STDOUT, shell=True,
                                                  timeout=timeout_duration).decode('utf-8')
                 numbers = re.findall(r"\d+", output)
-                job_id = ''.join(numbers)
+                job_id = int(''.join(numbers))
 
                 if job_id:
                     logger.log(f"Submitted a job with ID: {job_id}")
@@ -1466,7 +1529,7 @@ def make_new_config(
 
 def replace_placeholders(csv_row, placeholder, new_value):
     for column_name, value in csv_row.items():
-        csv_row[column_name] = value.replace(placeholder, new_value)
+        csv_row[column_name] = str(value).replace(placeholder, new_value)
 
 
 def make_task_cmd(new_config_path, conda_env, exec_path, csv_row):
