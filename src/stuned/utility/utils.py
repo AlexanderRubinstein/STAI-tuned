@@ -28,6 +28,7 @@ from watchdog.events import FileSystemEventHandler
 import io
 import re
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 DEFAULT_HASH_SIZE = 10
@@ -96,6 +97,8 @@ def read_yaml(yaml_file):
 
 
 def apply_random_seed(random_seed):
+    assert is_number(random_seed)
+    random_seed = int(parse_float_or_int_from_string(str(random_seed)))
     random.seed(random_seed)
     np.random.seed(random_seed)
     torch.manual_seed(random_seed)
@@ -728,6 +731,59 @@ def save_as_yaml(output_file_name, data):
         yaml.dump(data, outfile, default_flow_style=False)
 
 
+def write_into_csv_pd(
+    file_path,
+    row_number,  # starts with 1
+    column_name,
+    value,
+    use_lock=True,
+    allow_creating_file=False
+):
+
+    assert row_number > 0, "Rows enumeration starts with 1."
+
+    new_file = False
+
+    row_number -= 1
+
+    if not os.path.exists(file_path):
+        if allow_creating_file:
+            tmp_col_name = "tmp_col"
+            new_file = True
+            touch_file(file_path)
+            print(tmp_col_name, file=open(file_path, "w"))
+        else:
+            raise FileNotFoundError(f"File {file_path} does not exist")
+
+    lock = make_file_lock(file_path) if use_lock else NULL_CONTEXT
+
+    with lock:
+        df = pd.read_csv(file_path)
+
+        if new_file:
+            df = df.drop(columns=[tmp_col_name])
+
+        num_rows = df.shape[0]
+        if num_rows < row_number:
+            num_empty_rows_to_append = row_number - num_rows
+
+            empty_rows = pd.DataFrame(
+                {
+                    col: [pd.NA for _ in range(num_empty_rows_to_append)]
+                        for col in df.columns
+                }
+            )
+
+            df = pd.concat(
+                [df, empty_rows],
+                ignore_index=True
+            )
+
+        df.at[row_number, column_name] = value
+
+        df.to_csv(file_path, index=False)
+
+
 def write_into_csv_with_column_names(
     file_path,
     row_number,
@@ -1024,7 +1080,11 @@ def str_is_number(input_str):
 
 
 def parse_float_or_int_from_string(value_as_str):
-    if FLOATING_POINT in value_as_str:
+    if (
+            FLOATING_POINT in value_as_str
+        or
+            any([exp in value_as_str for exp in EXPONENTIAL_SYMBOLS])
+    ):
         return float(value_as_str)
     else:
         return int(value_as_str)
@@ -1108,6 +1168,18 @@ def read_csv_as_dict(
 
         for csv_row_number, csv_row in enumerate(csv_reader):
             result[csv_row_number + 1] = csv_row
+
+    return result
+
+
+def read_csv_as_dict_pd(
+    csv_path
+):
+
+    result = pd.read_csv(csv_path)
+    cols_row = pd.DataFrame({col: [col] for col in result.columns})
+    result = pd.concat([cols_row, result]).reset_index().transpose()
+    result = result.drop("index").to_dict(orient="dict")
 
     return result
 
@@ -1432,6 +1504,13 @@ def write_csv_dict_to_csv(dict_from_csv, csv_file, **kwargs):
                 append_row=(i == 0),
                 **kwargs
             )
+
+
+def write_csv_dict_to_csv_pd(dict_from_csv, csv_file):
+
+    df = pd.DataFrame.from_dict(dict_from_csv, orient="index")
+    df = df.iloc[1:]
+    df.to_csv(csv_file, index=False)
 
 
 def expand_csv(
@@ -1809,3 +1888,13 @@ def get_even_from_wrapped(giver, wrappable_as_property, property_to_get):
             property_to_get
         )
     return None
+
+
+def add_custom_properties(giver, taker):
+    custom_properties = properties_diff(giver, taker)
+    for custom_property in custom_properties:
+        setattr(
+            taker,
+            custom_property,
+            getattr(giver, custom_property)
+        )

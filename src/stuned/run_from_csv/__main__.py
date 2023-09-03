@@ -23,7 +23,8 @@ from utility.utils import (
     normalize_path,
     check_duplicates,
     expand_csv,
-    retrier_factory
+    retrier_factory,
+    is_number
 )
 from utility.configs import (
     AUTOGEN_PREFIX,
@@ -326,7 +327,7 @@ def process_csv_row(
     whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
 
     if (
-        whether_to_run.isnumeric()
+        is_number(whether_to_run)
             and int(whether_to_run) != 0
     ):
 
@@ -510,7 +511,7 @@ def make_new_config(
 
 def replace_placeholders(csv_row, placeholder, new_value):
     for column_name, value in csv_row.items():
-        csv_row[column_name] = value.replace(placeholder, new_value)
+        csv_row[column_name] = str(value).replace(placeholder, new_value)
 
 
 def make_task_cmd(new_config_path, conda_env, exec_path):
