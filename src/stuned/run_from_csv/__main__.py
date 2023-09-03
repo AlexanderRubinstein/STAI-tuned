@@ -85,10 +85,9 @@ MONITOR_STATUS_COLUMN = "status_monitor"
 MONITOR_EXIT_CODE_COLUMN = "exit_code_monitor"
 MONITOR_LAST_UPDATE_COLUMN = "last_update_monitor"
 
-use_shared_memory = sys.version_info >= (3, 8, 3)
-if use_shared_memory:
-    pass
-
+# use_shared_memory = sys.version_info >= (3, 8, 3)
+# if use_shared_memory:
+#     pass
 
 def parse_args():
     parser = argparse.ArgumentParser(

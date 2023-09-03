@@ -2,9 +2,9 @@ import datetime
 import time
 from collections import defaultdict
 
-from stuned.run_from_csv.__main__ import MONITOR_LAST_UPDATE_COLUMN
 from stuned.utility.logger import log_csv_for_concurrent
 from stuned.utility.utils import retrier_factory
+# from stuned.run_from_csv.__main__ import MONITOR_LAST_UPDATE_COLUMN
 
 
 class GSheetBatchUpdater:
@@ -36,8 +36,8 @@ class GSheetBatchUpdater:
                             col_value_dict.items()]
 
         # Make sure to also update the "last update" time
-        for row, col_value_dict in self.queue.items():
-            col_value_dict[MONITOR_LAST_UPDATE_COLUMN] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        # for row, col_value_dict in self.queue.items():
+        #     col_value_dict[MONITOR_LAST_UPDATE_COLUMN] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # Use retrier_factory to log the updates to the CSV
         try:
