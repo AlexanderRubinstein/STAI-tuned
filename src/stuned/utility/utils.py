@@ -128,7 +128,7 @@ def apply_random_seed(random_seed):
 
 
 def get_current_time():
-    return datetime.now()
+    return str(datetime.now())
 
 
 def current_time_formatted():

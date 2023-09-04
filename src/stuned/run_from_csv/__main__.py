@@ -1366,7 +1366,7 @@ def process_csv_row(
             default_config_path \
                 = shared_default_config_paths[default_config_path_or_url]
 
-        assert os.path.exists(default_config_path)
+        assert os.path.exists(default_config_path), f"Default config path at {default_config_path} does not exist."
 
         exp_dir = normalize_path(os.path.dirname(default_config_path))
         exp_name = os.path.basename(exp_dir)
@@ -1513,6 +1513,12 @@ def make_new_config(
         worksheet_name
     )
     new_config = make_config_from_default_and_deltas(default_config, deltas)
+    # make sure we preserve deltas though
+    for delta in deltas:
+        if delta == "logging/output_csv":
+            continue
+        new_config[DELTA_PREFIX + PREFIX_SEPARATOR + delta] = deltas[delta]
+
     new_config_path = os.path.join(
         exp_dir,
         AUTOGEN_PREFIX,

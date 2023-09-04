@@ -82,10 +82,12 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                             pretty_json(experiment_config)
                         )
                     )
-
-                    apply_random_seed(
-                        experiment_config["params"]["random_seed"]
-                    )
+                    if "params" in experiment_config and "random_seed" in experiment_config["params"]:
+                        apply_random_seed(
+                            experiment_config["params"]["random_seed"]
+                        )
+                    else:
+                        logger.log("Warning: no random seed was found in the config file. Not setting the seed.")
 
                     run_experiment(
                         experiment_config,
