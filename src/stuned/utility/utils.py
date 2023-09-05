@@ -1047,6 +1047,9 @@ def replace_many_by_one(
 
 def str_is_number(input_str):
 
+    if len(input_str) == 0:
+        return False
+
     exponential = False
     has_floating_point = False
     for i in range(len(input_str)):

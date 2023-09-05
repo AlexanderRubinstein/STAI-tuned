@@ -64,7 +64,7 @@ def get_config(config_path, logger=None):
     )
 
     experiment_config = read_yaml(config_path)
-    if experiment_config["use_hardcoded_config"]:
+    if experiment_config.get("use_hardcoded_config", False):
         logger.log(
             "Using hardcoded config."
         )
