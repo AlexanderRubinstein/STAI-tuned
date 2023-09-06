@@ -450,6 +450,11 @@ class RedneckLogger(BaseLogger):
             auto_newline=auto_newline,
             carriage_return=carriage_return
         )
+    def log_safe(self, msg):
+        try:
+            self.log(msg)
+        except Exception as e:
+            self.log(f"Error logging message: {e}")
 
     def info(
         self,

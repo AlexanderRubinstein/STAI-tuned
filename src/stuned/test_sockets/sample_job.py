@@ -1,22 +1,29 @@
 import random
 import socket
 import time
+from typing import List
 
 from stuned.utility.helpers_for_main import prepare_wrapper_for_experiment
 from stuned.utility.message_client import MessageClient, MessageType
 
-
+def get_safe_dict(dct, keys : List):
+    for key in keys:
+        if key in dct:
+            dct = dct[key]
+        else:
+            return None
 
 def socket_experiment(experiment_config,
     logger,
     processes_to_kill_before_exiting):
     
     # hopefully the ip is contained within the experiment config
-    logger.log("sup zoomer")
-    logger.log(experiment_config["logging"]["server_ip"])
-    logger.log(experiment_config["logging"]["server_port"])
-    server_ip, server_port = experiment_config["logging"]["server_ip"], experiment_config["logging"]["server_port"]
-    
+    logger.log_safe("sup zoomer")
+    logger.log_safe(experiment_config["logging"]["server_ip"])
+    logger.log_safe(experiment_config["logging"]["server_port"])
+    # server_ip, server_port = experiment_config["logging"]["server_ip"], experiment_config["logging"]["server_port"]
+    server_ip, server_port = get_safe_dict(experiment_config, ["logging", "server_ip"]), get_safe_dict(experiment_config, ["logging", "server_port"])
+
     msg_client = MessageClient(server_ip, server_port, logger)
     import os
     # Get all env vars
