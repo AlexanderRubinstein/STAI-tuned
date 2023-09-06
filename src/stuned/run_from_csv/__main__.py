@@ -1135,7 +1135,6 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
             )
             for row_number, csv_row in inputs_csv.items()
         ]
-
         if len(starmap_args_for_row_processing):
 
             first_csv_row = starmap_args_for_row_processing[0][1]

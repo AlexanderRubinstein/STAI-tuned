@@ -861,50 +861,54 @@ def redneck_logger_context(
 
     logger.log("Hostname: {}".format(get_hostname()))
     logger.log("Process id: {}".format(os.getpid()))
+    
+    # Check if reporting is done through a socket or gsheets
+    
 
     # add csv folder if exists
-    if OUTPUT_CSV_KEY in logging_config:
-        output_config = logging_config[OUTPUT_CSV_KEY]
-        logger.log(f"Output_config:\n{output_config}", auto_newline=True)
-        assert PATH_KEY in output_config
-        output_csv_path = output_config[PATH_KEY]
-        if not os.path.exists(output_csv_path):
-            touch_file(output_csv_path)
-        logger.set_csv_output(
-            logging_config[OUTPUT_CSV_KEY]
-        )
-        # Get some other things too: cuda information, CPU count
-        # and other things that are not in the config
-        gpu_info = get_gpu_info()
-        cpu_cores = get_cpu_cores()
-        
-        try_to_log_in_csv_in_batch(
-            logger,
-            [
-                (WHETHER_TO_RUN_COLUMN, "0"),
-                (STATUS_CSV_COLUMN, RUNNING_STATUS),
-                (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file)),
-                (FIRST_REPORT_TIME_COLUMN, get_current_time()),
-                (LAST_REPORT_TIME_COLUMN, get_current_time()),
-                (GPU_INFO_COLUMN, gpu_info),
-                (CPU_COUNT_COLUMN, cpu_cores)
-            ]
-        )
+    if False: #TODO!!!!!!!!!!!!!!!!!!
+        if OUTPUT_CSV_KEY in logging_config:
+            output_config = logging_config[OUTPUT_CSV_KEY]
+            logger.log(f"Output_config:\n{output_config}", auto_newline=True)
+            assert PATH_KEY in output_config
+            output_csv_path = output_config[PATH_KEY]
+            if not os.path.exists(output_csv_path):
+                touch_file(output_csv_path)
+            logger.set_csv_output(
+                logging_config[OUTPUT_CSV_KEY]
+            )
+            # Get some other things too: cuda information, CPU count
+            # and other things that are not in the config
+            gpu_info = get_gpu_info()
+            cpu_cores = get_cpu_cores()
+            
+            try_to_log_in_csv_in_batch(
+                logger,
+                [
+                    (WHETHER_TO_RUN_COLUMN, "0"),
+                    (STATUS_CSV_COLUMN, RUNNING_STATUS),
+                    (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file)),
+                    (FIRST_REPORT_TIME_COLUMN, get_current_time()),
+                    (LAST_REPORT_TIME_COLUMN, get_current_time()),
+                    (GPU_INFO_COLUMN, gpu_info),
+                    (CPU_COUNT_COLUMN, cpu_cores)
+                ]
+            )
 
-    # set up google drive sync
-    if logging_config[GDRIVE_FOLDER_KEY] is not None:
-        logger.create_logs_on_gdrive(
-            logging_config[GDRIVE_FOLDER_KEY]
-        )
-        logger.start_gdrive_daemon()
-        logger.log(f"Remote folder with logs: {logger.remote_log_folder_url}")
-        try_to_log_in_csv_in_batch(
-            logger,
-            [
-                (STDOUT_KEY, logger.remote_stdout_url),
-                (STDERR_KEY, logger.remote_stderr_url)
-            ]
-        )
+        # set up google drive sync
+        if logging_config[GDRIVE_FOLDER_KEY] is not None:
+            logger.create_logs_on_gdrive(
+                logging_config[GDRIVE_FOLDER_KEY]
+            )
+            logger.start_gdrive_daemon()
+            logger.log(f"Remote folder with logs: {logger.remote_log_folder_url}")
+            try_to_log_in_csv_in_batch(
+                logger,
+                [
+                    (STDOUT_KEY, logger.remote_stdout_url),
+                    (STDERR_KEY, logger.remote_stderr_url)
+                ]
+            )
 
     use_tb = get_with_assert(logging_config, "use_tb")
     tb_log_dir = None
@@ -1021,7 +1025,8 @@ def redneck_logger_context(
         ]
     )
     logger.log("Final log line for remote logs!")
-    try_to_sync_csv_with_remote(logger)
+    if False: #TODO!!!!!!!!!!!!!!!!!!
+        try_to_sync_csv_with_remote(logger)
     logger.stop_gdrive_daemon()
     logger.log("Logger context cleaned!")
 
