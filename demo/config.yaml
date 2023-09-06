@@ -8,7 +8,8 @@ params:
   random_seed: 42
 logging:
   gdrive_storage_folder: https://drive.google.com/drive/u/0/folders/12_wdaaWk_bCRpEnbO5K8cEWiClDp_mtc
-  use_wandb: True
+#  use_wandb: True
+  use_wandb: False
   wandb:
     netrc_path: "~/.netrc"
   use_tb: False
