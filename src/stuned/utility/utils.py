@@ -128,7 +128,7 @@ def apply_random_seed(random_seed):
 
 
 def get_current_time():
-    return str(datetime.now())
+    return datetime.now()
 
 
 def current_time_formatted():
@@ -308,6 +308,21 @@ def get_device(use_gpu, idx=0):
     else:
         return torch.device("cpu")
 
+def get_gpu_info():
+    gpu_info = ""
+    if torch.cuda.is_available():
+        gpu_info = torch.cuda.get_device_name(0)
+        # see if we can use it?
+        try:
+            tns = torch.randn(1, 1).cuda()
+        except:
+            gpu_info = gpu_info + " (not usable)"
+    else:
+        gpu_info = "no-gpu"
+    return gpu_info
+        
+def get_cpu_cores():
+    return repr(len(os.sched_getaffinity(0)))
 
 def get_model_device(model):
 
@@ -1852,3 +1867,14 @@ def update_gsheet(updater, column_num_status, column_num_last_update_monitor, ro
 
     # Batch update the cells
     updater.batch_update()
+    
+def dicts_not_equal(dict1 : dict, dict2 : dict) -> bool:
+    """ Returns True if the two dicts are not equal, False otherwise """
+    if len(dict1) != len(dict2):
+        return True
+
+    for key, value in dict1.items():
+        if key not in dict2 or dict2[key] != value:
+            return True
+
+    return False

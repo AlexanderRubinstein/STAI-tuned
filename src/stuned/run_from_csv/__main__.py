@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import datetime
 import os
 import copy
@@ -11,11 +12,14 @@ import subprocess
 import shutil
 import sys
 import multiprocessing as mp
+from typing import Dict, List
 from warnings import warn
 
 import psutil
 
 from stuned.GSheetBatchUpdater import GSheetBatchUpdater
+from stuned.job import Job, JobStatus, find_job_id_by_row_id, find_job_idx, get_slurm_job_status
+from stuned.job_manager import JobManager
 from stuned.utility.local_processing_utils import process_exists
 
 # local modules
@@ -62,6 +66,8 @@ FILES_URL = "https://drive.google.com/file"
 
 USE_SRUN = False
 
+OPEN_SOCKET = True
+
 PATH_TO_DEFAULT_CONFIG_COLUMN = "path_to_default_config"
 MAIN_PATH_COLUMN = "path_to_main"
 DEV_NULL = "/dev/null"
@@ -83,6 +89,7 @@ MAX_PROCESSES = 16
 # Monitor-related constants
 MONITOR_STATUS_COLUMN = "status_monitor"
 MONITOR_EXIT_CODE_COLUMN = "exit_code_monitor"
+MONITOR_JOB_ID_COLUMN = "slurm_job_id_monitor"
 MONITOR_LAST_UPDATE_COLUMN = "last_update_monitor"
 
 # use_shared_memory = sys.version_info >= (3, 8, 3)
@@ -290,8 +297,52 @@ def get_slurm_jobs_stats(jobs_ids, logger):
 
     return job_stats
 
+def update_job_statuses_in_place(job_manager : JobManager, shared_jobs_copy : Dict, logger) -> bool:
+    # Check SLURM cluster for running jobs and their status
+    job_ids = [job["job_id"] for job in shared_jobs_copy.values()]
 
-def monitor_jobs_async(async_results, shared_jobs_dict, run_locally: bool, logger, spreadsheet_url, worksheet_name: str,
+    # Check SLURM cluster for jobs and their status
+    all_jobs_stats = get_slurm_jobs_stats(job_ids, logger)
+
+    if all_jobs_stats is None:
+        return False
+    
+    if all_jobs_stats == {}:
+        return True
+    
+    # updated_rows = []
+    for row_id, job in shared_jobs_copy.items():
+        job_stat = all_jobs_stats.get(job["job_id"], None)
+        if job_stat:
+            slurm_status = job_stat["State"]
+            exit_code = job_stat["ExitCode"]
+        else:
+            slurm_status = None
+            exit_code = None
+
+        job_status = get_slurm_job_status(slurm_status)
+            
+        job_from_local_idx = find_job_idx(job_manager.jobs, job["job_id"])
+        if job_from_local_idx is None:
+            # Add a job to the list and mark as update
+            job_to_add = Job(job_id = job["job_id"], job_status = job_status, job_exit_code = exit_code, csv_row_id = row_id)
+            job_to_add.updated = True
+            job_manager.jobs.append(job_to_add)
+            # updated_rows.append(row_id)
+        else:
+            job_from_local = job_manager.jobs[job_from_local_idx]
+            if job_from_local.csv_row_id is None:
+                job_from_local.csv_row_id = row_id
+            if job_from_local.job_status != job_status or job_from_local.job_exit_code != exit_code:
+                # Update the job and mark as update
+                job_from_local.job_status = job_status
+                job_from_local.job_exit_code = exit_code
+                job_from_local.updated = True
+                # updated_rows.append(row_id)
+            job_manager.jobs[job_from_local_idx] = job_from_local
+    return True
+
+def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict, run_locally: bool, logger, spreadsheet_url, worksheet_name: str,
                        shared_row_numbers, csv_path, gsheet_client: GspreadClient, lock_manager, n_jobs_total):
     # Prepare google client for writing the updates. The mechanism of writing the updates here is different
     # from the individual jobs. Here we write the updates "globally" to the worksheet as opposed to a local csv file.
@@ -343,11 +394,15 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally: bool, logge
 
         # Prepare the updates
         shared_row_numbers_lst = list(shared_row_numbers)
+        "status	walltime	starttime	endtime	WandB url	stdout	stderr"
+        reset_columns = ["status", "walltime", "starttime", "endtime", "WandB url", "stdout", "stderr"]
         column_value_pairs = [
             (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
             (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
         ]
-
+        for column_name in reset_columns:
+            column_value_pairs.append((column_name, ""))
+        
         # Add updates to the queue
         for row_id_share in shared_row_numbers_lst:
             for key, val in column_value_pairs:
@@ -395,6 +450,11 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally: bool, logge
     max_sleep_duration = 30  # Maximum sleep duration
 
     local_jobs_dict = {}
+    
+    last_full_check_time = time.time()
+    check_for_full_updates_every = 60
+    
+    # jobs_to_monitor = []
 
     while not should_exit:
         if run_locally:
@@ -414,93 +474,98 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally: bool, logge
                     if "exit_code" in job:
                         gsheet_updater.add_to_queue(row_id, MONITOR_EXIT_CODE_COLUMN,
                                                     f"{job['exit_code']}")
+                
+            # Count the statuses
+            submitted = submitted_jobs.value
+            running = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Running")
+            finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
+            failed = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Failed")
         else:
-            # Check SLURM cluster for running jobs and their status
-            job_ids = [job["job_id"] for job in shared_jobs_dict.values()]
-
-            # Check SLURM cluster for jobs and their status
-            all_jobs_stats = get_slurm_jobs_stats(job_ids, logger)
-
-            if all_jobs_stats is None:
-                logger.log("Warning: sacct command timed out! Will repeat after sleeping")
-                time.sleep(current_sleep_duration)
-                continue  # or decide on another action
-
             # Create a copy of shared_jobs_dict to track changes
             with lock_manager:
                 shared_jobs_copy = dict(shared_jobs_dict)
+            with job_manager.manager_lock:
+                jobs_update_status = update_job_statuses_in_place(job_manager, shared_jobs_copy, logger)
+                
+                if not jobs_update_status:
+                    logger.log("Warning: sacct command timed out! Will repeat after sleeping")
+                    time.sleep(current_sleep_duration)
+                    continue
+                
+                    # Update the status and exit code in the shared_jobs_dict
+                    # with lock_manager:
+                    #     shared_dict_row_cp = shared_jobs_dict[row_id].copy()
+                    #     if shared_jobs_dict[row_id]["status"] != job_status:
+                    #         shared_dict_row_cp["status"] = job_status
+                    #     if exit_code:
+                    #         shared_dict_row_cp["exit_code"] = exit_code
+                    #     shared_jobs_dict[row_id] = shared_dict_row_cp
 
-            for row_id, job in shared_jobs_copy.items():
-                job_stat = all_jobs_stats.get(job["job_id"], None)
-                if job_stat:
-                    slurm_status = job_stat["State"]
-                    exit_code = job_stat["ExitCode"]
-                else:
-                    slurm_status = None
-                    exit_code = None
+                # For each updated row, add the necessary updates to the gsheet_updater queue
+                # for job in jobs_to_monitor:
+                for idx, job in enumerate(job_manager.jobs):
+                    if job.updated:
+                        gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_STATUS_COLUMN, job.job_status)
+                        gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+                        if job.job_exit_code is not None:
+                            gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_EXIT_CODE_COLUMN,
+                                                        f"{job.job_exit_code}")
+                        if job.job_id is not None:
+                            gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_JOB_ID_COLUMN, f"{job.job_id}")
+                        
+                        # check the queue of each job too
+                        for q_item in job.writing_queue:
+                            gsheet_updater.add_to_queue(job.csv_row_id, q_item[0], q_item[1])
+                        job_manager.jobs[idx].writing_queue = []
+                        job_manager.jobs[idx].updated = False
+            # for row_id in updated_rows:
+            #     job_id = find_job_id_by_row_id(jobs_to_monitor, row_id)
+            #     if job_id is None:
+            #         logger.log(f"Warning: job with row id {row_id} not found in the list of jobs to monitor!")
+            #         continue
+            #     job = jobs_to_monitor[job_id]
+            #     gsheet_updater.add_to_queue(row_id, MONITOR_STATUS_COLUMN, job.job_status)
+            #     gsheet_updater.add_to_queue(row_id, MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            #     if job.job_exit_code is not None:
+            #         gsheet_updater.add_to_queue(row_id, MONITOR_EXIT_CODE_COLUMN, f"{job.job_exit_code}")
+            #     if job.job_id is not None:
+            #         gsheet_updater.add_to_queue(row_id, MONITOR_JOB_ID_COLUMN, f"{job.job_id}")
 
-                if slurm_status == 'R':
-                    job_status = 'Running'
-                elif slurm_status in ['CG', 'C', 'COMPLETED']:
-                    job_status = 'Completed'
-                elif slurm_status == 'PD':
-                    job_status = 'Pending'
-                elif slurm_status == 'FAILED':
-                    job_status = 'Failed'
-                elif slurm_status == 'CANCELLED':
-                    job_status = 'Cancelled'
-                elif slurm_status is None and job["status"] == "running":
-                    job_status = 'Completed'  # Assuming that if the job isn't in the queue and was previously running, it's now completed
-                else:
-                    job_status = 'Unknown'
-
-                # Update the status and exit code in the shared_jobs_dict
-                with lock_manager:
-                    shared_dict_row_cp = shared_jobs_dict[row_id].copy()
-                    if shared_jobs_dict[row_id]["status"] != job_status:
-                        shared_dict_row_cp["status"] = job_status
-                    if exit_code:
-                        shared_dict_row_cp["exit_code"] = exit_code
-                    shared_jobs_dict[row_id] = shared_dict_row_cp
-
-            # Identify rows that have updates
-            updated_rows = [row_id for row_id, job in shared_jobs_dict.items() if local_jobs_dict.get(row_id) != job]
-
-            # For each updated row, add the necessary updates to the gsheet_updater queue
-            for row_id in updated_rows:
-                job = shared_jobs_dict[row_id]
-                gsheet_updater.add_to_queue(row_id, MONITOR_STATUS_COLUMN, job["status"])
-                if "exit_code" in job:
-                    gsheet_updater.add_to_queue(row_id, MONITOR_EXIT_CODE_COLUMN, f"{job['exit_code']}")
-
+            # Count the statuses
+            submitted = submitted_jobs.value
+            # running = sum(1 for job in jobs_to_monitor if job.job_status == "Running")
+            running = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.RUNNING)
+            # finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
+            finished_successfully = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.COMPLETED)
+            failed = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.FAILED)
         # Check if there are updates
-        if updated_rows:
-            # gsheet_updater.batch_update()
-            # Update the local copy with the changes
-            local_jobs_dict = dict(shared_jobs_dict)
+        # if updated_rows:
+        #     # gsheet_updater.batch_update()
+        #     # Update the local copy with the changes
+        #     local_jobs_dict = dict(shared_jobs_dict)
 
-        # Count the statuses
-        submitted = submitted_jobs.value
-        running = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Running")
-        finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
-        failed = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Failed")
 
         # Display progress and status
         last_update_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         status_msg = (f"Jobs Progress | Submitted: {submitted} / {total_jobs} | "
+                      f"Running: {running} / {total_jobs} | "
                       f"Finished: {finished_successfully} / {total_jobs} | "
                       f"Failed: {failed} | Last Update: {last_update_time}")
         logger.log(status_msg, carriage_return=True)
+
+        # Periodically we want to report back to Gsheets to indicate status of the jobs.
+        if gsheet_updater is not None:
+            gsheet_updater.batch_update()
+            
+            if not job_manager.open_socket and (time.time() - last_full_check_time > check_for_full_updates_every):
+                gsheet_updater.update_remote_if_changes_happened()
+                
 
         # Sleep for the current duration
         time.sleep(current_sleep_duration)
 
         # Increment the sleep duration for the next iteration, but don't exceed the maximum
         current_sleep_duration = min(current_sleep_duration + sleep_increment, max_sleep_duration)
-
-        # Periodically we want to report back to Gsheets to indicate status of the jobs.
-        if gsheet_updater is not None:
-            gsheet_updater.batch_update()
 
         if finished_successfully + failed == n_jobs_total:
             logger.log("All jobs finished.")
@@ -547,7 +612,9 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally: bool, logge
         else:
             # Implement SLURM logic here
             # Identify SLURM job IDs of the running jobs
-            running_job_ids = [job["main_pid"] for job in shared_jobs_dict.values() if job["status"] == "running"]
+            # running_job_ids = [job["main_pid"] for job in shared_jobs_dict.values() if job["status"] == "running"]
+            # Get all jobs's IDs that are not finished or failed already
+            running_job_ids = [job.job_id for job in job_manager.jobs if job.job_status in JobStatus.PENDING or job.job_status in JobStatus.RUNNING or (job.job_status is not None and job.job_status.starstwith(JobStatus.UNKNOWN + "_"))]
             logger.log(f"Number of SLURM jobs that were running: {len(running_job_ids)}")
 
             # Use scancel to send a termination request to these jobs
@@ -557,7 +624,8 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally: bool, logge
             grace_period = 300
             for second in range(1, grace_period + 1):
                 # Check the status of the jobs using squeue
-                all_jobs = get_all_slurm_jobs()
+                # all_jobs = get_all_slurm_jobs()
+                
                 still_running = sum(1 for job_id in running_job_ids if job_id in all_jobs)
 
                 logger.log(
@@ -996,6 +1064,7 @@ def monitor_jobs_async(async_results, shared_jobs_dict, run_locally: bool, logge
 
 def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX, HTTP_PREFIX)):
     # Define a flag to check if we should exit
+        
 
     if make_final_cmd is None:
         make_final_cmd = make_final_cmd_slurm
@@ -1003,6 +1072,20 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
     args = parse_args()
 
     logger = make_logger()
+
+    job_manager = JobManager(local_run = args.run_locally if args.run_locally is not None else False, open_socket = OPEN_SOCKET, logger=logger)
+    
+    # if OPEN_SOCKET:
+    #     loop = asyncio.get_event_loop()
+    #     loop.create_task(job_manager.start_server())
+    #     loop.create_task(job_manager.process_messages())
+    #     loop.run_forever()
+    
+    # Make sure server ip and port are set
+    logger.log("Trying to get server ip and port")
+    if OPEN_SOCKET:
+        while job_manager.server_ip is None or job_manager.server_port is None:
+            time.sleep(1)
 
     csv_path_or_url = args.csv_path
 
@@ -1046,7 +1129,9 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                 shared_csv_updates,
                 shared_row_numbers,
                 current_step,
-                len(inputs_csv)
+                len(inputs_csv),
+                job_manager.server_ip,
+                job_manager.server_port,
             )
             for row_number, csv_row in inputs_csv.items()
         ]
@@ -1107,7 +1192,7 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
 
                     upload_csv = True
 
-                    monitor_jobs_async(async_results, shared_jobs_dict, args.run_locally, logger, spreadsheet_url,
+                    monitor_jobs_async(job_manager, async_results, shared_jobs_dict, args.run_locally, logger, spreadsheet_url,
                                        worksheet_name, shared_row_numbers, csv_path, gspread_client, lock,
                                        len(starmap_args_for_job_submitting))
 
@@ -1336,6 +1421,8 @@ def process_csv_row(
         shared_row_numbers,
         current_step,
         total_rows,
+        server_ip,
+        server_port,
 ):
     assert not spreadsheet_url or worksheet_name is not None, (
         "`worksheet_name` is None but this is not allowed when remote sheet is used;"
@@ -1380,7 +1467,9 @@ def process_csv_row(
             default_config,
             exp_dir,
             spreadsheet_url,
-            worksheet_name
+            worksheet_name,
+            server_ip,
+            server_port
         )
 
         cmd_as_string = make_task_cmd(
@@ -1481,7 +1570,9 @@ def make_new_config(
         default_config,
         exp_dir,
         spreadsheet_url,
-        worksheet_name
+        worksheet_name,
+        server_ip,
+        server_port
 ):
     deltas = extract_from_csv_row_by_prefix(
         csv_row,
@@ -1512,6 +1603,10 @@ def make_new_config(
         spreadsheet_url,
         worksheet_name
     )
+    
+    deltas["logging/server_ip"] = server_ip
+    deltas["logging/server_port"] = server_port    
+        
     new_config = make_config_from_default_and_deltas(default_config, deltas)
     # make sure we preserve deltas though
     for delta in deltas:

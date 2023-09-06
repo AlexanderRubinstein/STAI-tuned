@@ -38,19 +38,23 @@ def demo_experiment(
 
     # report GPU info and and also CPU count
     # do the retry factory
-    gpu_info = ""
-    if torch.cuda.is_available():
-        gpu_info = torch.cuda.get_device_name(0)
-        # see if we can use it?
-        try:
-            tns = torch.randn(1, 1).cuda()
-        except:
-            gpu_info = gpu_info + " (not usable)"
-    else:
-        gpu_info = "no-gpu"
-
-    try_to_log_in_csv(logger, "gpu_info", gpu_info)
-    try_to_log_in_csv(logger, "cpu_count", repr(len(os.sched_getaffinity(0))))
+    def get_gpu_info():
+        gpu_info = ""
+        if torch.cuda.is_available():
+            gpu_info = torch.cuda.get_device_name(0)
+            # see if we can use it?
+            try:
+                tns = torch.randn(1, 1).cuda()
+            except:
+                gpu_info = gpu_info + " (not usable)"
+        else:
+            gpu_info = "no-gpu"
+        return gpu_info
+    def get_cpu_info():
+        return repr(len(os.sched_getaffinity(0)))
+    
+    try_to_log_in_csv(logger, "gpu_info", get_gpu_info())
+    try_to_log_in_csv(logger, "cpu_count", get_cpu_info())
 
     raise Exception("test exception")
 

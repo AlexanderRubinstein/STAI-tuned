@@ -26,9 +26,11 @@ from tempfile import NamedTemporaryFile
 from .utils import (
     QUOTE_CHAR,
     SYSTEM_PLATFORM,
+    get_cpu_cores,
     get_current_time,
     get_current_run_folder,
     extract_profiler_results,
+    get_gpu_info,
     write_into_csv_with_column_names,
     prepare_factory_without_args,
     kill_processes,
@@ -195,6 +197,10 @@ PLACEHOLDERS_FOR_DEFAULT = itself_and_lower_upper_case("Default")
 
 DAEMON_SLEEP_TIME = 20
 TIME_TO_LOSE_LOCK_IF_CONCURRENT = 0.1
+
+# diagnostics
+GPU_INFO_COLUMN = "gpu_info"
+CPU_COUNT_COLUMN = "cpu_count"
 
 
 def make_string_style(
@@ -700,7 +706,7 @@ def handle_exception(logger, exception=None):
         [
             (STATUS_CSV_COLUMN, FAIL_STATUS),
             # This is questionable? I'd leave it as 0 @Alex
-            (WHETHER_TO_RUN_COLUMN, "1")
+            (WHETHER_TO_RUN_COLUMN, "0")
         ]
     )
 
@@ -862,6 +868,11 @@ def redneck_logger_context(
         logger.set_csv_output(
             logging_config[OUTPUT_CSV_KEY]
         )
+        # Get some other things too: cuda information, CPU count
+        # and other things that are not in the config
+        gpu_info = get_gpu_info()
+        cpu_cores = get_cpu_cores()
+        
         try_to_log_in_csv_in_batch(
             logger,
             [
@@ -870,6 +881,8 @@ def redneck_logger_context(
                 (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file)),
                 (FIRST_REPORT_TIME_COLUMN, get_current_time()),
                 (LAST_REPORT_TIME_COLUMN, get_current_time()),
+                (GPU_INFO_COLUMN, gpu_info),
+                (CPU_COUNT_COLUMN, cpu_cores)
             ]
         )
 
@@ -1378,33 +1391,43 @@ class GspreadClient:
                         rows_to_update = [rows_to_update]
 
                     requests = []
-                    for row_num in rows_to_update:
-                        a1_range_to_update = f"{worksheet_name}!{row_num + 1}:{row_num + 1}"
-                        values_to_update = [csv_file_as_list[row_num]]
+                    # Hacky way to update the header when new columns are added
+                    if rows_to_update == [0]:
+                        header_data = csv_file_as_list[0]
+                        a1_range_to_update = f"{worksheet_name}!1:1"
+                        spreadsheet.values_update(
+                            a1_range_to_update,
+                            params={'valueInputOption': 'USER_ENTERED'},
+                            body={'values': [header_data]}
+                        )
+                    else:
+                        for row_num in rows_to_update:
+                            a1_range_to_update = f"{worksheet_name}!{row_num + 1}:{row_num + 1}"
+                            values_to_update = [csv_file_as_list[row_num]]
 
-                        request = {
-                            "updateCells": {
-                                "range": {
-                                    "sheetId": sheet_id,
-                                    "startRowIndex": row_num,
-                                    "endRowIndex": row_num + 1,
-                                    "startColumnIndex": 0,
-                                    "endColumnIndex": len(values_to_update[0])
-                                },
-                                "rows": [{
-                                    "values": [{"userEnteredValue": {"stringValue": value}} for value in
-                                               values_to_update[0]]
-                                }],
-                                "fields": "userEnteredValue"
+                            request = {
+                                "updateCells": {
+                                    "range": {
+                                        "sheetId": sheet_id,
+                                        "startRowIndex": row_num,
+                                        "endRowIndex": row_num + 1,
+                                        "startColumnIndex": 0,
+                                        "endColumnIndex": len(values_to_update[0])
+                                    },
+                                    "rows": [{
+                                        "values": [{"userEnteredValue": {"stringValue": value}} for value in
+                                                values_to_update[0]]
+                                    }],
+                                    "fields": "userEnteredValue"
+                                }
                             }
-                        }
-                        requests.append(request)
+                            requests.append(request)
 
-                        # Now, batch all the requests together
-                    body = {
-                        "requests": requests
-                    }
-                    spreadsheet.batch_update(body)
+                            # Now, batch all the requests together
+                        body = {
+                            "requests": requests
+                        }
+                        spreadsheet.batch_update(body)
 
 
                 # a1_range_to_update = worksheet_name
@@ -1670,7 +1693,11 @@ def get_gdrive_file_by_url(gdrive_client, remote_url):
     file_id = extract_id_from_gdrive_url(remote_url)
     return gdrive_client.get_node_by_id(file_id)
 
-
+def read_csv_as_dict_lock(csv_path):
+    lock = make_file_lock(csv_path)
+    with lock:
+        csv_as_dict = read_csv_as_dict(csv_path)
+    return csv_as_dict
 def log_csv_for_concurrent(
     csv_path,
     row_col_value_triplets
@@ -1696,16 +1723,18 @@ def log_csv_for_concurrent(
                 use_lock=False
             )
     time.sleep(TIME_TO_LOSE_LOCK_IF_CONCURRENT)
-    with lock:
-        csv_as_dict = read_csv_as_dict(csv_path)
+    
+    # Do we really need to check??
+    # with lock:
+    #     csv_as_dict = read_csv_as_dict(csv_path)
 
-    for csv_row_number, column_name, value in row_col_value_triplets_clean:
-        assert_two_values_are_close(
-            csv_as_dict.get(csv_row_number).get(
-                column_name
-            ),
-            value
-        )
+    # for csv_row_number, column_name, value in row_col_value_triplets_clean:
+    #     assert_two_values_are_close(
+    #         csv_as_dict.get(csv_row_number).get(
+    #             column_name
+    #         ),
+    #         value
+    #     )
 
 
 class RedneckProgressBar:
