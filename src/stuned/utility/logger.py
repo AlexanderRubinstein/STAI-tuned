@@ -776,9 +776,9 @@ def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True)
 
     if logger.gspread_client is not None:
         if logger.socket_client is not None:
-            return try_to_log_in_socket_in_batch(logger, column_value_pairs, sync=sync)
+            return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
         else:
-            try_to_log_in_csv_in_batch(logger, column_value_pairs)
+            try_to_log_in_csv_in_batch(logger, final_column_value_pairs)
             if sync:
                 try_to_sync_csv_with_remote(logger)
 
