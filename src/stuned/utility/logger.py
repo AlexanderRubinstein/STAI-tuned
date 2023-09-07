@@ -766,11 +766,21 @@ def try_to_log_in_socket_with_msg_type_in_batch(logger : RedneckLogger, msg_type
     if sync:
         logger.socket_client.sync_with_remote()
 def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True):
+    # if a dict is passed, covnert to a list
+    final_column_value_pairs = []
+    if isinstance(column_value_pairs, dict):
+        for key, value in column_value_pairs.items():
+            final_column_value_pairs.append((key, value))
+    else:
+        final_column_value_pairs = column_value_pairs
+
     if logger.gspread_client is not None:
         if logger.socket_client is not None:
             return try_to_log_in_socket_in_batch(logger, column_value_pairs, sync=sync)
         else:
-            return try_to_log_in_csv_in_batch(logger, column_value_pairs)
+            try_to_log_in_csv_in_batch(logger, column_value_pairs)
+            if sync:
+                try_to_sync_csv_with_remote(logger)
 
 def log_to_sheet_with_msg_type_in_batch(logger : RedneckLogger, msg_type_column_value_pairs, sync=True):
     if logger.gspread_client is not None:
