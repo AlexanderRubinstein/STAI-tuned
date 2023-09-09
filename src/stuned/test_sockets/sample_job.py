@@ -31,7 +31,7 @@ def socket_experiment(experiment_config,
     logger.log(env_vars)
     msg_client.send_start_command()
     
-    msg_client.send_key_val("none", "Hello from mini job!", sync=True)
+    # msg_client.send_key_val("none", "Hello from mini job!", sync=True)
     
     all_cols = ["col1", "col2", "col3", "col4", "col5", "col6", "col7"]
     wait_times_last = 0
