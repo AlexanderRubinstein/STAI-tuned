@@ -83,7 +83,7 @@ class JobManager():
                 
         
 
-    def handle_client(self, client, queue):
+    def handle_client(self, client : socket.socket, queue):
         with client:
             while True:
                 # Read the first 4 bytes to get the message length
@@ -94,7 +94,7 @@ class JobManager():
                 message_length = int.from_bytes(length_data, 'big')
 
                 # Read the actual message
-                data = client.recv(message_length)
+                data = client.recv(message_length, socket.MSG_WAITALL)
                 if not data:
                     self.logger.log('Warning: Connection closed by client')
                     break
