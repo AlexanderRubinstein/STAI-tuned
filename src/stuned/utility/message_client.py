@@ -52,6 +52,8 @@ class MessageClient:
         retries = 50
         retry_delay = 2
 
+        message_str = "DUMMY-MSG"
+
         for _ in range(retries):
             try:
                 all_messages = []
@@ -67,14 +69,14 @@ class MessageClient:
                 message_str = json.dumps({
                     "job_id": self.job_id, 
                     "messages": all_messages
-                })
+                }).encode('utf-8')
                 
                 # Send the length of the message first
                 message_length = len(message_str)
                 self.socket.sendall(message_length.to_bytes(4, 'big'))
                 
                 # Send the actual message
-                self.socket.sendall(message_str.encode('utf-8'))
+                self.socket.sendall(message_str)
 
                 data = self.socket.recv(1024)
                 if data == b'ACK':
@@ -85,6 +87,7 @@ class MessageClient:
                     self.logger.log("No ACK received. Retrying...")
             except Exception as e:
                 self.logger.log(f"Error: {e}. Retrying in {retry_delay} seconds...")
+                self.logger.log(f"Attempted to log: \n {message_str}")
                 print(f"Error: {e}. Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
                 self.connect()  # Try to reconnect
