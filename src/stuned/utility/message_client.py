@@ -59,8 +59,8 @@ class MessageClient:
                     # Serialize the message as JSON
                     message_data = {
                         "type": message_type,
-                        "key": message_key,
-                        "value": message_value
+                        "key": str(message_key),
+                        "value": str(message_value)
                     }
                     all_messages.append(message_data)
                     
@@ -91,7 +91,7 @@ class MessageClient:
 
         self.logger.log("Failed to send messages after multiple retries.")
         
-    def send_message(self, message_type : MessageType, message_key, message_value, sync=False):
+    def send_message(self, message_type, message_key, message_value, sync=False):
         self.message_queue.append((message_type, message_key, message_value))
         if sync:
             self.sync_with_remote()

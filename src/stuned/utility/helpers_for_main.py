@@ -20,7 +20,38 @@ from .logger import (
     redneck_logger_context
 )
 
+class BestPerformanceTracker():
+    """
+    Given a performance metric, this class tracks the best performance together with the best `step`
+    at which the best performance was achieved. This is useful when recording the perofrmances to gsheets
+    """
 
+    def __init__(self):
+        self.performances = {}
+
+    def update(self, performance_key, performance_val, step, higher_is_better=True):
+        if performance_key not in self.performances:
+            self.performances[performance_key] = {
+                "best_performance": performance_val,
+                "best_step": step,
+                "updated": True
+            }
+        else:
+            if (
+                (higher_is_better and performance_val > self.performances[performance_key]["best_performance"])
+                or (not higher_is_better and performance_val < self.performances[performance_key]["best_performance"])
+            ):
+                self.performances[performance_key]["best_performance"] = performance_val
+                self.performances[performance_key]["best_step"] = step
+                self.performances[performance_key]["updated"] = True
+
+    def get_new_vals_to_log(self):
+        vals_to_log = {}
+        for performance_key in self.performances:
+            if self.performances[performance_key]["updated"]:
+                vals_to_log["best"+str(performance_key)] = self.performances[performance_key]["best_performance"]
+                self.performances[performance_key]["updated"] = False
+        return vals_to_log
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Run an experiment with given configs."
@@ -50,6 +81,12 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                     logger
                 )
 
+
+                using_socket = False
+                # Check if socket is being used
+                if "logging" in experiment_config and "server_ip" in experiment_config["logging"] and "server_port" in experiment_config["logging"]:
+                    logger.log("Using socket for logging")
+                    using_socket = True
                 if patch_config is not None:
                     patch_config(experiment_config)
 
@@ -59,7 +96,8 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                     logger=logger,
                     exp_name=experiment_config[EXP_NAME_CONFIG_KEY],
                     start_time=None,
-                    config_to_log_in_wandb=experiment_config
+                    config_to_log_in_wandb=experiment_config,
+                    using_socket = using_socket
                 ) as logger:
 
                     repo = git.Repo(get_project_root_path())

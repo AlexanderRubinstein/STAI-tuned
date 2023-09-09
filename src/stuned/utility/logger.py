@@ -1,4 +1,8 @@
 import os
+from typing import List
+
+from .message_client import MessageClient, MessageType
+
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # suppress tf warning
 import shutil
 import torch
@@ -280,6 +284,8 @@ class RedneckLogger(BaseLogger):
         # for keeping track columns
         self.self_columns = set()
 
+        self.socket_client : MessageClient = None
+
     def store(self, name, msg):
         assert isinstance(msg, str)
         self.cache[name] = msg
@@ -299,6 +305,9 @@ class RedneckLogger(BaseLogger):
         touch_file(self.stderr_file)
         self.stdout_lock = make_file_lock(self.stdout_file)
         self.stderr_lock = make_file_lock(self.stderr_file)
+
+    def update_socket_client(self, messaging_client : MessageClient):
+        self.socket_client = messaging_client
 
     def create_logs_on_gdrive(self, gdrive_storage_folder_url):
 
@@ -705,17 +714,22 @@ def handle_exception(logger, exception=None):
         logger.error("{}".format(traceback.format_exc()))
     else:
         logger.error("{}\n{}".format(str(exception), traceback.format_exc()))
+    write_logs_exception = [
+        (STATUS_CSV_COLUMN, FAIL_STATUS),
+        # This is questionable? I'd leave it as 0 @Alex
+        (WHETHER_TO_RUN_COLUMN, "0")
+    ]
+    if logger.socket_client:
+       try_to_log_in_socket_in_batch(logger,
+                                     write_logs_exception,
+                                     sync=True)
+    else:
+        try_to_log_in_csv_in_batch(
+            logger,
+            write_logs_exception
+        )
 
-    try_to_log_in_csv_in_batch(
-        logger,
-        [
-            (STATUS_CSV_COLUMN, FAIL_STATUS),
-            # This is questionable? I'd leave it as 0 @Alex
-            (WHETHER_TO_RUN_COLUMN, "0")
-        ]
-    )
-
-    try_to_sync_csv_with_remote(logger)
+        try_to_sync_csv_with_remote(logger)
     if "profiler_results" in logger.cache:
         dump_profiler_results(logger)
 
@@ -733,6 +747,54 @@ def try_to_log_in_csv_in_batch(logger : RedneckLogger, column_value_pairs):
 
     if logger.csv_output is not None:
         logger.log_csv(column_value_pairs)
+
+def try_to_log_in_socket_in_batch(logger : RedneckLogger, column_value_pairs, sync=True):
+    if logger.socket_client is not None:
+        for cv_pair in column_value_pairs:
+            logger.socket_client.send_message(MessageType.JOB_RESULT_UPDATE, cv_pair[0], cv_pair[1], sync=False)
+        if sync:
+            logger.socket_client.sync_with_remote()
+
+def try_to_log_in_socket_with_msg_type_in_batch(logger : RedneckLogger, msg_type_column_value_pairs : List[List], sync=True):
+    if logger.socket_client is not None:
+        # Check if the format is correct
+        if not isinstance(msg_type_column_value_pairs, list):
+            logger.log(f"Message type logging requires a list of lists of column value pairs, but found {type(msg_type_column_value_pairs)}")
+
+        for msg_type, column_value_pairs in msg_type_column_value_pairs.items():
+            if not isinstance(column_value_pairs, list):
+                logger.log(f"Message type logging requires a list of lists of column value pair, but found {type(column_value_pairs)}")
+            if len(column_value_pairs) != 2:
+                logger.log(f"Each message type should have a list of column value pairs of length 2, found {len(column_value_pairs)}")
+
+            logger.socket_client.send_message(msg_type, column_value_pairs[0], column_value_pairs[1], sync=False)
+    if sync:
+        logger.socket_client.sync_with_remote()
+def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True):
+    # if a dict is passed, covnert to a list
+    final_column_value_pairs = []
+    if isinstance(column_value_pairs, dict):
+        for key, value in column_value_pairs.items():
+            final_column_value_pairs.append((key, value))
+    else:
+        final_column_value_pairs = column_value_pairs
+
+    if logger.gspread_client is not None:
+        if logger.socket_client is not None:
+            return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
+        else:
+            try_to_log_in_csv_in_batch(logger, final_column_value_pairs)
+            if sync:
+                try_to_sync_csv_with_remote(logger)
+
+def log_to_sheet_with_msg_type_in_batch(logger : RedneckLogger, msg_type_column_value_pairs, sync=True):
+    if logger.gspread_client is not None:
+        if logger.socket_client is not None:
+            for msg_type, column_value_pairs in msg_type_column_value_pairs.items():
+                try_to_log_in_socket_in_batch(logger, column_value_pairs, sync=sync)
+        else:
+            raise NotImplementedError("Message type logging is not implemented for csv logging")
+
 
 def try_to_sync_csv_with_remote(logger, sync_row_zero=True, report_aux=True, update_only_local_cols=False):
     '''
@@ -845,7 +907,8 @@ def redneck_logger_context(
     logger=None,
     exp_name="Default experiment",
     start_time=None,
-    config_to_log_in_wandb=None
+    config_to_log_in_wandb=None,
+    using_socket = False
 ):
     if start_time is None:
         start_time = get_current_time()
@@ -859,55 +922,73 @@ def redneck_logger_context(
             require_old_folder=False
         )
 
+    if using_socket:
+        # Establish the connection here
+        server_ip, server_port = config_to_log_in_wandb["logging"]["server_ip"], config_to_log_in_wandb["logging"]["server_port"]
+        messaging_client = MessageClient(server_ip, server_port, logger)
+        logger.socket_client = messaging_client
+
     logger.log("Hostname: {}".format(get_hostname()))
     logger.log("Process id: {}".format(os.getpid()))
     
-    # Check if reporting is done through a socket or gsheets
-    
 
     # add csv folder if exists
-    if False: #TODO!!!!!!!!!!!!!!!!!!
-        if OUTPUT_CSV_KEY in logging_config:
-            output_config = logging_config[OUTPUT_CSV_KEY]
-            logger.log(f"Output_config:\n{output_config}", auto_newline=True)
-            assert PATH_KEY in output_config
-            output_csv_path = output_config[PATH_KEY]
-            if not os.path.exists(output_csv_path):
-                touch_file(output_csv_path)
-            logger.set_csv_output(
-                logging_config[OUTPUT_CSV_KEY]
-            )
-            # Get some other things too: cuda information, CPU count
-            # and other things that are not in the config
-            gpu_info = get_gpu_info()
-            cpu_cores = get_cpu_cores()
-            
+    if OUTPUT_CSV_KEY in logging_config:
+        output_config = logging_config[OUTPUT_CSV_KEY]
+        logger.log(f"Output_config:\n{output_config}", auto_newline=True)
+        assert PATH_KEY in output_config
+        output_csv_path = output_config[PATH_KEY]
+        if not os.path.exists(output_csv_path):
+            touch_file(output_csv_path)
+        logger.set_csv_output(
+            logging_config[OUTPUT_CSV_KEY]
+        )
+        # Get some other things too: cuda information, CPU count
+        # and other things that are not in the config
+        gpu_info = get_gpu_info()
+        cpu_cores = get_cpu_cores()
+
+        info_to_report = [
+            (WHETHER_TO_RUN_COLUMN, "0"),
+            (STATUS_CSV_COLUMN, RUNNING_STATUS),
+            (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file)),
+            (FIRST_REPORT_TIME_COLUMN, get_current_time()),
+            (LAST_REPORT_TIME_COLUMN, get_current_time()),
+            (GPU_INFO_COLUMN, gpu_info),
+            (CPU_COUNT_COLUMN, cpu_cores)
+        ]
+
+        if logger.socket_client is not None:
+            try_to_log_in_socket_in_batch(logger, info_to_report, sync=False)
+        else:
             try_to_log_in_csv_in_batch(
                 logger,
-                [
-                    (WHETHER_TO_RUN_COLUMN, "0"),
-                    (STATUS_CSV_COLUMN, RUNNING_STATUS),
-                    (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file)),
-                    (FIRST_REPORT_TIME_COLUMN, get_current_time()),
-                    (LAST_REPORT_TIME_COLUMN, get_current_time()),
-                    (GPU_INFO_COLUMN, gpu_info),
-                    (CPU_COUNT_COLUMN, cpu_cores)
-                ]
+                info_to_report
             )
 
-        # set up google drive sync
-        if logging_config[GDRIVE_FOLDER_KEY] is not None:
-            logger.create_logs_on_gdrive(
-                logging_config[GDRIVE_FOLDER_KEY]
+    # set up google drive sync
+    if logging_config[GDRIVE_FOLDER_KEY] is not None:
+        logger.create_logs_on_gdrive(
+            logging_config[GDRIVE_FOLDER_KEY]
+        )
+        logger.start_gdrive_daemon()
+        logger.log(f"Remote folder with logs: {logger.remote_log_folder_url}")
+
+        std_info_to_report = [
+            (STDOUT_KEY, logger.remote_stdout_url),
+            (STDERR_KEY, logger.remote_stderr_url)
+        ]
+
+        if logger.socket_client is not None:
+            try_to_log_in_socket_in_batch(
+                logger,
+                std_info_to_report,
+                sync=False
             )
-            logger.start_gdrive_daemon()
-            logger.log(f"Remote folder with logs: {logger.remote_log_folder_url}")
+        else:
             try_to_log_in_csv_in_batch(
                 logger,
-                [
-                    (STDOUT_KEY, logger.remote_stdout_url),
-                    (STDERR_KEY, logger.remote_stderr_url)
-                ]
+                std_info_to_report
             )
 
     use_tb = get_with_assert(logging_config, "use_tb")
@@ -940,11 +1021,22 @@ def redneck_logger_context(
         )
         # extract wandb link
         wandb_url = logger.wandb_run.get_url()
-        try_to_log_in_csv(
-            logger,
-            WANDB_URL_COLUMN,
-            wandb_url
-        )
+
+        log_wandb_info = [
+            (WANDB_URL_COLUMN, wandb_url),
+        ]
+        if logger.socket_client is not None:
+            try_to_log_in_socket_in_batch(
+                logger,
+                log_wandb_info,
+                sync=False
+            )
+        else:
+            try_to_log_in_csv(
+                logger,
+                WANDB_URL_COLUMN,
+                wandb_url
+            )
         logger.log(
             "WandB url: {}".format(wandb_url)
         )
@@ -971,7 +1063,11 @@ def redneck_logger_context(
 
     # tell that logger is created
     logger.log("Logger context initialized!")
-    try_to_sync_csv_with_remote(logger)
+    # TODO: decide if we want to do all the syncing in `try_to_log_in_csv_in_batch` or to have a separate function
+    if logger.socket_client is not None:
+        logger.socket_client.sync_with_remote()
+    else:
+        try_to_sync_csv_with_remote(logger)
     yield logger
 
     if use_tb:
@@ -1003,29 +1099,44 @@ def redneck_logger_context(
             # extract tb link
             tb_url = get_tb_url(logger, tb_process_spawner)
             # insert tb link in csv if exists
-            try_to_log_in_csv(
-                logger,
-                TB_URL_COLUMN,
-                tb_url
-            )
+            if logger.socket_client is not None:
+                try_to_log_in_socket_in_batch(logger,
+                                              [(TB_URL_COLUMN, tb_url)],
+                                                sync=False)
+            else:
+                try_to_log_in_csv(
+                    logger,
+                    TB_URL_COLUMN,
+                    tb_url
+                )
             logger.log("Tensorboard url: {}".format(tb_url))
             logger.tb_run = None
 
-            try_to_sync_csv_with_remote(logger)
+            # try_to_sync_csv_with_remote(logger)
 
     # close wandb
     logger.finish_wandb(verbose=True)
 
-    try_to_log_in_csv_in_batch(
-        logger,
-        [
+    log_finish_results = [
             (WALLTIME_COLUMN, str((get_current_time() - start_time))),
             (STATUS_CSV_COLUMN, COMPLETED_STATUS),
             (WHETHER_TO_RUN_COLUMN, "0")
         ]
-    )
+    if logger.socket_client is not None:
+        try_to_log_in_socket_in_batch(
+            logger,
+            log_finish_results,
+            sync=False
+        )
+    else:
+        try_to_log_in_csv_in_batch(
+            logger,
+            log_finish_results
+        )
     logger.log("Final log line for remote logs!")
-    if False: #TODO!!!!!!!!!!!!!!!!!!
+    if not logger.socket_client:
+        logger.socket_client.sync_with_remote()
+    else:
         try_to_sync_csv_with_remote(logger)
     logger.stop_gdrive_daemon()
     logger.log("Logger context cleaned!")
