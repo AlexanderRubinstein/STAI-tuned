@@ -1448,7 +1448,8 @@ def process_csv_row(
             spreadsheet_url,
             worksheet_name,
             server_ip,
-            server_port
+            server_port,
+            run_locally
         )
 
         cmd_as_string = make_task_cmd(
@@ -1551,7 +1552,8 @@ def make_new_config(
         spreadsheet_url,
         worksheet_name,
         server_ip,
-        server_port
+        server_port,
+        run_locally
 ):
     deltas = extract_from_csv_row_by_prefix(
         csv_row,
@@ -1584,7 +1586,9 @@ def make_new_config(
     )
     
     deltas["logging/server_ip"] = server_ip
-    deltas["logging/server_port"] = server_port    
+    deltas["logging/server_port"] = server_port
+
+    deltas["run_locally"] = run_locally
         
     new_config = make_config_from_default_and_deltas(default_config, deltas)
     # make sure we preserve deltas though

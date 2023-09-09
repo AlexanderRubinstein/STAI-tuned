@@ -308,8 +308,20 @@ def get_device(use_gpu, idx=0):
     else:
         return torch.device("cpu")
 
+def get_cuda_gpu_model():
+    try:
+        # This command queries the GPU name using nvidia-smi
+        output = subprocess.check_output(["nvidia-smi", "--query-gpu=gpu_name", "--format=csv,noheader,nounits"]).decode("utf-8").strip()
+        if output:
+            return output
+        else:
+            return None
+    except:
+        return None
+
 def get_gpu_info():
     gpu_info = ""
+    return "?"
     if torch.cuda.is_available():
         gpu_info = torch.cuda.get_device_name(0)
         # see if we can use it?
