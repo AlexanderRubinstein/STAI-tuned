@@ -100,8 +100,12 @@ class JobManager():
                     break
 
                 # Deserialize the message
-                message_obj = json.loads(data.decode('utf-8'))
-                
+                try:
+                    message_obj = json.loads(data.decode('utf-8'))
+                except:
+                    self.logger.log('Warning: Failed to deserialize message')
+                    self.logger.log(f"Tried to deserialize: {data}\n which decoded to {data.decode('utf-8')}")
+                    break
                 assert "job_id" in message_obj, "Job ID not found in message"
                 assert "messages" in message_obj, "Messages not found in message"
                 
