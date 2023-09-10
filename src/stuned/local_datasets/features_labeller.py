@@ -24,7 +24,8 @@ from local_datasets.dsprites import (
 from local_datasets.utils import (
     make_or_load_from_cache,
     randomly_subsampled_dataloader,
-    chain_dataloaders
+    chain_dataloaders,
+    make_sampler
 )
 from local_datasets.base import BaseData
 sys.path.pop(0)
@@ -397,7 +398,8 @@ class FeaturesLabeller:
         test_batch_size,
         num_workers=1,
         single_label=SINGLE_LABEL_FOR_OFF_DIAG,
-        off_diag_percent=0
+        off_diag_percent=0,
+        sampler_config=None
     ):
 
         train_loaders = {}
@@ -408,7 +410,8 @@ class FeaturesLabeller:
                 self.diag_name,
                 train_batch_size,
                 test_batch_size,
-                num_workers
+                num_workers,
+                sampler_config=sampler_config
             )
 
         if len(self.features_list) > 1:
@@ -421,7 +424,8 @@ class FeaturesLabeller:
                         self.off_diag_names[0],
                         train_batch_size,
                         0,
-                        num_workers
+                        num_workers,
+                        sampler_config=sampler_config
                     )
 
                 off_diag_addition_train_dataloader = randomly_subsampled_dataloader(
@@ -445,7 +449,8 @@ class FeaturesLabeller:
                             off_diag_name,
                             train_batch_size,
                             test_batch_size,
-                            num_workers
+                            num_workers,
+                            sampler_config=sampler_config
                         )
             else:
 
@@ -456,7 +461,8 @@ class FeaturesLabeller:
                     = self._get_multilabelled_dataloaders_for_off_diag(
                         train_batch_size,
                         test_batch_size,
-                        num_workers
+                        num_workers,
+                        sampler_config=sampler_config
                     )
 
         return train_loaders, test_loaders
@@ -466,17 +472,27 @@ class FeaturesLabeller:
         dataset_name,
         train_batch_size,
         test_batch_size,
-        num_workers
+        num_workers,
+        sampler_config=None
     ):
         train_loader = None
         test_loader = None
 
         if train_batch_size > 0:
+            train_indices = self.indices_for_classes["train"][dataset_name]
+            flattened_train_indices = set.union(*train_indices)
+            sampler = make_sampler(
+                # TODO(Alex | 10.09.2023): provide dataset here
+                # if Pytorch starts requiring it for more then just taking len
+                [None] * len(flattened_train_indices),
+                sampler_config
+            )
             train_loader = self._get_dataloader_from_indices_for_classes(
-                self.indices_for_classes["train"][dataset_name],
+                train_indices,
                 train_batch_size,
-                shuffle=True,
-                num_workers=num_workers
+                shuffle=(sampler is None),
+                num_workers=num_workers,
+                sampler=sampler
             )
 
         if test_batch_size > 0:
@@ -494,7 +510,8 @@ class FeaturesLabeller:
         indices_for_classes_for_split_per_dataset,
         batch_size,
         shuffle,
-        num_workers
+        num_workers,
+        sampler=None
     ):
 
         return torch.utils.data.DataLoader(
@@ -503,24 +520,35 @@ class FeaturesLabeller:
             ),
             batch_size=batch_size,
             shuffle=shuffle,
-            num_workers=num_workers
+            num_workers=num_workers,
+            sampler=sampler
         )
 
     def _get_multilabelled_dataloaders_for_off_diag(
         self,
         train_batch_size,
         test_batch_size,
-        num_workers
+        num_workers,
+        sampler_config=None
     ):
         train_loader = None
         test_loader = None
 
         if train_batch_size > 0:
+            train_indices_to_labels = self.off_diag_indices_to_labels["train"]
+
+            sampler = make_sampler(
+                # TODO(Alex | 10.09.2023): provide dataset here
+                # if Pytorch starts requiring it for more then just taking len
+                [None] * len(train_indices_to_labels),
+                sampler_config
+            )
             train_loader = self._get_multilabelled_off_diag_dataloader(
-                self.off_diag_indices_to_labels["train"],
+                train_indices_to_labels,
                 train_batch_size,
-                shuffle=True,
-                num_workers=num_workers
+                shuffle=(sampler is None),
+                num_workers=num_workers,
+                sampler=sampler
             )
 
         if test_batch_size > 0:
@@ -538,7 +566,8 @@ class FeaturesLabeller:
         off_diag_indices_to_labels_for_split,
         batch_size,
         shuffle,
-        num_workers
+        num_workers,
+        sampler=None
     ):
         assert self.off_diag_indices_to_labels
         dataloader = torch.utils.data.DataLoader(
@@ -547,7 +576,8 @@ class FeaturesLabeller:
             ),
             batch_size=batch_size,
             shuffle=shuffle,
-            num_workers=num_workers
+            num_workers=num_workers,
+            sampler=sampler
         )
         dataloader.label_names = self.off_diag_names
         return dataloader

@@ -38,7 +38,13 @@ from utility.utils import (
     show_images,
     append_dict,
     compute_proportion,
-    add_custom_properties
+    add_custom_properties,
+    raise_unknown,
+    get_with_assert
+)
+from utility.imports import (
+    FROM_CLASS_KEY,
+    make_from_class_ctor
 )
 sys.path.pop(0)
 
@@ -678,3 +684,16 @@ class DropLastIteratorWrapper:
     def __next__(self):
         next_item = next(self.iterator)
         return next_item[:-1]
+
+
+def make_sampler(data_source, sampler_config):
+
+    if sampler_config is None:
+        return None
+
+    sampler_type = get_with_assert(sampler_config, "type")
+    specific_sampler_config = get_with_assert(sampler_config, sampler_type)
+    if sampler_type.startswith(FROM_CLASS_KEY):
+        return make_from_class_ctor(specific_sampler_config, [data_source])
+    else:
+        raise_unknown("sampler type", sampler_type, "sampler config")
