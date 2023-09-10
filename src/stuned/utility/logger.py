@@ -1,6 +1,8 @@
 import os
 from typing import List
 
+import numpy as np
+
 from .message_client import MessageClient, MessageType
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # suppress tf warning
@@ -772,6 +774,7 @@ def try_to_log_in_socket_with_msg_type_in_batch(logger : RedneckLogger, msg_type
         logger.socket_client.sync_with_remote()
 def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True):
     # if a dict is passed, covnert to a list
+
     final_column_value_pairs = []
     if isinstance(column_value_pairs, dict):
         for key, value in column_value_pairs.items():
@@ -779,6 +782,12 @@ def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True)
     else:
         final_column_value_pairs = column_value_pairs
 
+    # make sure the values are strings, not tensors, detached etc
+    for i in range(len(final_column_value_pairs)):
+        if isinstance(final_column_value_pairs[i][1], torch.Tensor):
+            final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1].item())
+        elif isinstance(final_column_value_pairs[i][1], np.ndarray):
+            final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1].tolist())
     if logger.gspread_client is not None:
         if logger.socket_client is not None:
             return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
