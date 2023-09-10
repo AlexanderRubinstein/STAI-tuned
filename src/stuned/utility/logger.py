@@ -783,9 +783,13 @@ def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True)
         final_column_value_pairs = column_value_pairs
 
     # make sure the values are strings, not tensors, detached etc
+    # also possible they're on a gpu, need to move to cpu
     for i in range(len(final_column_value_pairs)):
         if isinstance(final_column_value_pairs[i][1], torch.Tensor):
-            final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1].item())
+            final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1].detach().cpu().numpy().tolist())
+            # but if it's a single value, convert to a string
+            if len(final_column_value_pairs[i][1]) == 1:
+                final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1][0])
         elif isinstance(final_column_value_pairs[i][1], np.ndarray):
             final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1].tolist())
     if logger.gspread_client is not None:
@@ -966,6 +970,14 @@ def redneck_logger_context(
             (GPU_INFO_COLUMN, gpu_info),
             (CPU_COUNT_COLUMN, cpu_cores)
         ]
+
+        # Also report all the "fixed_params" stuff from the config
+        if "fixed_params" in config_to_log_in_wandb:
+            for key, value in config_to_log_in_wandb["fixed_params"].items():
+                # make sure it's escaped properly in case of a list or so?
+                if isinstance(value, list):
+                    value = str(value).replace(',', ' ')
+                info_to_report.append(("delta:" + str(key), value))
 
         if logger.socket_client is not None:
             try_to_log_in_socket_in_batch(logger, info_to_report, sync=False)
@@ -1452,7 +1464,7 @@ class GspreadClient:
         if spreadsheet_url is None:
             new_spreadsheet = True
 
-        spreadsheet = self.get_spreadsheet_by_url(
+        spreadsheet : gspread.client = self.get_spreadsheet_by_url(
             spreadsheet_url
         )
 
@@ -1546,11 +1558,28 @@ class GspreadClient:
                                     },
                                     "rows": [{
                                         "values": [{"userEnteredValue": {"stringValue": value}} for value in
-                                                values_to_update[0]]
+                                                values_to_update[0]],
                                     }],
                                     "fields": "userEnteredValue"
                                 }
                             }
+                            # request = {
+                            #     "updateCells": {
+                            #         "range": {
+                            #             "sheetId": sheet_id,
+                            #             "startRowIndex": row_num,
+                            #             "endRowIndex": row_num + 1,
+                            #             "startColumnIndex": 0,
+                            #             "endColumnIndex": len(values_to_update[0])
+                            #         },
+                            #         "rows": [{
+                            #             "values": [{"userEnteredFormat": {"textFormat": value}} for value in
+                            #                        values_to_update[0]],
+                            #             "valueInputOption": 'USER_ENTERED'  # Add this line
+                            #         }],
+                            #         "fields": "userEnteredFormat"
+                            #     }
+                            # }
                             requests.append(request)
 
                             # Now, batch all the requests together
@@ -1558,7 +1587,6 @@ class GspreadClient:
                             "requests": requests
                         }
                         spreadsheet.batch_update(body)
-
 
                 # a1_range_to_update = worksheet_name
                 # if single_row is not None:

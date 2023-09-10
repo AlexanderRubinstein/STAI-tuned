@@ -61,6 +61,10 @@ from stuned.utility.logger import (
     try_to_upload_csv,
     make_delta_column_name, HTTP_PREFIX, GspreadClient
 )
+# Arnas' changes
+DELTA_AFFECTS_ONLY_FIXED_PARAMS = True
+
+##
 
 FILES_URL = "https://drive.google.com/file"
 
@@ -1555,11 +1559,23 @@ def make_new_config(
         server_port,
         run_locally
 ):
+    """
+    Assume that `fixed_params` are the ones being passed to the jobs. We will move them to the config file
+    but will update them according to the `deltas` in the config file.
+    """
     deltas = extract_from_csv_row_by_prefix(
         csv_row,
         DELTA_PREFIX + PREFIX_SEPARATOR,
         ignore_values=PLACEHOLDERS_FOR_DEFAULT
     )
+
+    if DELTA_AFFECTS_ONLY_FIXED_PARAMS:
+        """ Make changes only in the 'fixed_params' subdict of the config """
+        assert "fixed_params" in default_config, \
+            "If DELTA_AFFECTS_ONLY_FIXED_PARAMS is True, then 'fixed_params' must be in default_config."
+        for key in list(deltas.keys()):
+            deltas["fixed_params" + NESTED_CONFIG_KEY_SEPARATOR + key] = deltas[key]
+            del deltas[key]
 
     if len(deltas) > 0:
         check_duplicates(list(deltas.keys()))
@@ -1596,6 +1612,11 @@ def make_new_config(
         if delta == "logging/output_csv":
             continue
         new_config[DELTA_PREFIX + PREFIX_SEPARATOR + delta] = deltas[delta]
+
+    if DELTA_AFFECTS_ONLY_FIXED_PARAMS:
+        # Copy stuff from `fixed_params` to the root of the config
+        for key, value in new_config["fixed_params"].items():
+            new_config[key] = value
 
     new_config_path = os.path.join(
         exp_dir,
