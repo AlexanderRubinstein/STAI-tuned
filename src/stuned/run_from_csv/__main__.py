@@ -7,6 +7,7 @@ import re
 import shlex
 import signal
 import time
+import warnings
 from tempfile import NamedTemporaryFile
 import subprocess
 import shutil
@@ -63,6 +64,7 @@ from stuned.utility.logger import (
 )
 # Arnas' changes
 DELTA_AFFECTS_ONLY_FIXED_PARAMS = True
+EMPTY_VALUE_MEANS_NO_CHANGE = True
 
 ##
 
@@ -1580,12 +1582,21 @@ def make_new_config(
     if len(deltas) > 0:
         check_duplicates(list(deltas.keys()))
 
+
+    deltas_del = []
     for key in deltas.keys():
         value = deltas[key]
         if value == EMPTY_STRING:
             deltas[key] = ""
         elif value == "":
-            raise Exception(f"Empty value for {make_delta_column_name(key)}")
+            if EMPTY_VALUE_MEANS_NO_CHANGE:
+                # erase the key
+                deltas_del.append(key)
+                warnings.warn("WARNING: Empty value for {} will be ignored.".format(key))
+            else:
+                raise Exception(f"Empty value for {make_delta_column_name(key)}")
+    for key in deltas_del:
+        del deltas[key]
 
     decode_strings_in_dict(
         deltas,

@@ -785,13 +785,16 @@ def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True)
     # make sure the values are strings, not tensors, detached etc
     # also possible they're on a gpu, need to move to cpu
     for i in range(len(final_column_value_pairs)):
-        if isinstance(final_column_value_pairs[i][1], torch.Tensor):
-            final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1].detach().cpu().numpy().tolist())
+        value = final_column_value_pairs[i][1]
+        if isinstance(value, torch.Tensor):
+            value = value.detach().cpu().numpy().tolist()
             # but if it's a single value, convert to a string
-            if len(final_column_value_pairs[i][1]) == 1:
-                final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1][0])
-        elif isinstance(final_column_value_pairs[i][1], np.ndarray):
-            final_column_value_pairs[i] = (final_column_value_pairs[i][0], final_column_value_pairs[i][1].tolist())
+            if isinstance(value, list) and len(value) == 1:
+                value = value[0]
+        elif isinstance(value, np.ndarray):
+            value = value.tolist()
+        final_column_value_pairs[i] = (final_column_value_pairs[i][0], value)
+
     if logger.gspread_client is not None:
         if logger.socket_client is not None:
             return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
