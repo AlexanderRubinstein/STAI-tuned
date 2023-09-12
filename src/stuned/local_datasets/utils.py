@@ -649,28 +649,44 @@ def make_named_labels_batch(label_names, labels_batch):
 
 class ChainingIteratorsWrapper:
 
-    def __init__(self, iterators_list):
+    def __init__(self, iterators_list, random_order=False):
         self.iterators = iterators_list
-        self.current_iterator_id = 0
+        self.not_exhausted_ids = list(range(len(self.iterators)))
+        self.random_order = random_order
+        self._next_id()
 
     def __iter__(self):
         return self
 
+    def _next_id(self):
+        if self.random_order:
+            self.current_iterator_id = random.choice(self.not_exhausted_ids)
+        else:
+            self.current_iterator_id = self.not_exhausted_ids[0]
+
     def __next__(self):
+        self._next_id()
         current_iterator = self.iterators[self.current_iterator_id]
         try:
             iteration_element = next(current_iterator)
         except StopIteration:
-            if self.current_iterator_id + 1 == len(self.iterators):
+            if len(self.not_exhausted_ids) == 1:
                 raise
             else:
-                self.current_iterator_id += 1
+                index_to_pop = self.not_exhausted_ids.index(
+                    self.current_iterator_id
+                )
+                self.not_exhausted_ids.pop(index_to_pop)
                 iteration_element = self.__next__()
         return iteration_element
 
 
-def chain_dataloaders(dataloaders_list):
-    return wrap_dataloader(dataloaders_list, ChainingIteratorsWrapper)
+def chain_dataloaders(dataloaders_list, random_order=False):
+    return wrap_dataloader(
+        dataloaders_list,
+        ChainingIteratorsWrapper,
+        random_order=random_order
+    )
 
 
 class DropLastIteratorWrapper:

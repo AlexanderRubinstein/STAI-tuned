@@ -9,7 +9,8 @@ import copy
 # local modules
 from .utils import (
     error_or_print,
-    get_nested_attr
+    get_nested_attr,
+    get_with_assert
 )
 
 
@@ -190,8 +191,7 @@ def import_from_string(string, reload=False, nested_attrs_depth=1):
 
 def make_from_class_ctor(from_class_config, pos_args_list=[]):
 
-    assert "class" in from_class_config
-    class_ctor = import_from_string(from_class_config["class"])
+    class_ctor = import_from_string(get_with_assert(from_class_config, "class"))
     kwargs = from_class_config.get("kwargs", {})
     importable_kwargs = from_class_config.get("kwargs_to_import", {})
 
