@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import datetime
+import multiprocessing
 import os
 import copy
 import re
@@ -480,7 +481,7 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
         running = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.RUNNING)
         # finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
         finished_successfully = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.COMPLETED)
-        failed = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.FAILED)
+        failed = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.FAILED or job.job_status == JobStatus.CANCELLED)
 
         # Display progress and status
         last_update_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1121,10 +1122,11 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
             )
             for row_number, csv_row in inputs_csv.items()
         ]
+
         if len(starmap_args_for_row_processing):
 
-            first_csv_row = starmap_args_for_row_processing[0][1]
-            check_csv_column_names(first_csv_row, allowed_prefixes)
+            # first_csv_row = starmap_args_for_row_processing[0][1]
+            # check_csv_column_names(first_csv_row, allowed_prefixes)
 
             pool_size = get_pool_size(len(starmap_args_for_row_processing))
 
@@ -1180,7 +1182,6 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                     monitor_jobs_async(job_manager, async_results, shared_jobs_dict, args.run_locally, logger, spreadsheet_url,
                                        worksheet_name, shared_row_numbers, csv_path, gspread_client, lock,
                                        len(starmap_args_for_job_submitting))
-
             # Print all IDs
             # logger.log(f"Len of spawned jobs: {len(shared_job_objs)}")
 
@@ -1194,6 +1195,12 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
             #         worksheet_name,
             #         gspread_client
             #     )
+    # oh need to close the server and stuff bruv!!!!!!!!!!!!!!!!!!!!!
+    if job_manager.open_socket:
+        logger.log("Closing server")
+        job_manager.server_process.terminate()
+    logger.log("Job done, exiting.")
+    sys.exit(0)
 
 
 def get_pool_size(iterable_len):
