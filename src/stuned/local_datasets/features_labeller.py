@@ -420,8 +420,7 @@ class FeaturesLabeller:
             if off_diag_percent > 0:
 
                 off_diag_addition_train_dataloader, _ = \
-                    self._get_dataloaders_for_dataset_name(
-                        self.off_diag_names[0],
+                    self._get_multilabelled_dataloaders_for_off_diag(
                         train_batch_size,
                         0,
                         num_workers,
@@ -438,7 +437,8 @@ class FeaturesLabeller:
                     [
                         train_loaders[self.diag_name],
                         off_diag_addition_train_dataloader
-                    ]
+                    ],
+                    random_order=True
                 )
 
             if single_label:
