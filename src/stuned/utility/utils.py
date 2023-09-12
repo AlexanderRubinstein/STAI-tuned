@@ -996,6 +996,8 @@ def decode_val_from_str(
             and (value[0] == list_start_symbol
             or value[-1] == list_end_symbol)
     ):
+        # Parse a list. First remove repeated spaces etc
+        value = value.replace('  ', ' ').replace('[ ', '[').replace(' ]', ']')
 
         assert (
             value[0] == list_start_symbol

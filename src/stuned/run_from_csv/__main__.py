@@ -1470,7 +1470,7 @@ def process_csv_row(
             with lock:
                 os.makedirs(log_folder, exist_ok=True)
 
-        if run_locally:
+        if run_locally:     
             # final_cmd = "{} &> {}".format(cmd_as_string, log_file_path)
             final_cmd = "{}".format(cmd_as_string)
         else:
