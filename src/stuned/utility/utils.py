@@ -996,6 +996,8 @@ def decode_val_from_str(
             and (value[0] == list_start_symbol
             or value[-1] == list_end_symbol)
     ):
+        # Parse a list. First remove repeated spaces etc
+        value = value.replace('  ', ' ').replace('[ ', '[').replace(' ]', ']')
 
         assert (
             value[0] == list_start_symbol
@@ -1127,6 +1129,15 @@ def parse_list_from_string(
 
         return result_list
 
+def parse_list_cell(cell):
+    """Parse a cell containing a list."""
+    try:
+        if cell.startswith(LIST_START_SYMBOL) and cell.endswith(LIST_END_SYMBOL):
+            content = cell[1:-1]  # Remove the start and end symbols
+            return [int(item.strip()) for item in content.split()]
+    except Exception as e:
+        asd = 123
+    return cell
 
 def read_csv_as_dict(
     csv_path,
@@ -1154,7 +1165,13 @@ def read_csv_as_dict(
         for fieldname in csv_reader.fieldnames:
             result[0][fieldname] = fieldname
 
+        # for csv_row_number, csv_row in enumerate(csv_reader):
+        #     result[csv_row_number + 1] = csv_row
+
         for csv_row_number, csv_row in enumerate(csv_reader):
+            # Parse cells that contain lists
+            # for key, value in csv_row.items():
+            #     csv_row[key] = parse_list_cell(value)
             result[csv_row_number + 1] = csv_row
 
     return result

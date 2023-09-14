@@ -1,12 +1,14 @@
 import argparse
 import asyncio
 import datetime
+import multiprocessing
 import os
 import copy
 import re
 import shlex
 import signal
 import time
+import warnings
 from tempfile import NamedTemporaryFile
 import subprocess
 import shutil
@@ -61,6 +63,11 @@ from stuned.utility.logger import (
     try_to_upload_csv,
     make_delta_column_name, HTTP_PREFIX, GspreadClient
 )
+# Arnas' changes
+DELTA_AFFECTS_ONLY_FIXED_PARAMS = True
+EMPTY_VALUE_MEANS_NO_CHANGE = True
+
+##
 
 FILES_URL = "https://drive.google.com/file"
 
@@ -474,7 +481,7 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
         running = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.RUNNING)
         # finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
         finished_successfully = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.COMPLETED)
-        failed = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.FAILED)
+        failed = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.FAILED or job.job_status == JobStatus.CANCELLED)
 
         # Display progress and status
         last_update_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1115,10 +1122,11 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
             )
             for row_number, csv_row in inputs_csv.items()
         ]
+
         if len(starmap_args_for_row_processing):
 
-            first_csv_row = starmap_args_for_row_processing[0][1]
-            check_csv_column_names(first_csv_row, allowed_prefixes)
+            # first_csv_row = starmap_args_for_row_processing[0][1]
+            # check_csv_column_names(first_csv_row, allowed_prefixes)
 
             pool_size = get_pool_size(len(starmap_args_for_row_processing))
 
@@ -1174,7 +1182,6 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                     monitor_jobs_async(job_manager, async_results, shared_jobs_dict, args.run_locally, logger, spreadsheet_url,
                                        worksheet_name, shared_row_numbers, csv_path, gspread_client, lock,
                                        len(starmap_args_for_job_submitting))
-
             # Print all IDs
             # logger.log(f"Len of spawned jobs: {len(shared_job_objs)}")
 
@@ -1188,6 +1195,12 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
             #         worksheet_name,
             #         gspread_client
             #     )
+    # oh need to close the server and stuff bruv!!!!!!!!!!!!!!!!!!!!!
+    if job_manager.open_socket:
+        logger.log("Closing server")
+        job_manager.server_process.terminate()
+    logger.log("Job done, exiting.")
+    sys.exit(0)
 
 
 def get_pool_size(iterable_len):
@@ -1464,7 +1477,7 @@ def process_csv_row(
             with lock:
                 os.makedirs(log_folder, exist_ok=True)
 
-        if run_locally:
+        if run_locally:     
             # final_cmd = "{} &> {}".format(cmd_as_string, log_file_path)
             final_cmd = "{}".format(cmd_as_string)
         else:
@@ -1555,21 +1568,42 @@ def make_new_config(
         server_port,
         run_locally
 ):
+    """
+    Assume that `fixed_params` are the ones being passed to the jobs. We will move them to the config file
+    but will update them according to the `deltas` in the config file.
+    """
     deltas = extract_from_csv_row_by_prefix(
         csv_row,
         DELTA_PREFIX + PREFIX_SEPARATOR,
         ignore_values=PLACEHOLDERS_FOR_DEFAULT
     )
 
+    if DELTA_AFFECTS_ONLY_FIXED_PARAMS:
+        """ Make changes only in the 'fixed_params' subdict of the config """
+        assert "fixed_params" in default_config, \
+            "If DELTA_AFFECTS_ONLY_FIXED_PARAMS is True, then 'fixed_params' must be in default_config."
+        for key in list(deltas.keys()):
+            deltas["fixed_params" + NESTED_CONFIG_KEY_SEPARATOR + key] = deltas[key]
+            del deltas[key]
+
     if len(deltas) > 0:
         check_duplicates(list(deltas.keys()))
 
+
+    deltas_del = []
     for key in deltas.keys():
         value = deltas[key]
         if value == EMPTY_STRING:
             deltas[key] = ""
         elif value == "":
-            raise Exception(f"Empty value for {make_delta_column_name(key)}")
+            if EMPTY_VALUE_MEANS_NO_CHANGE:
+                # erase the key
+                deltas_del.append(key)
+                warnings.warn("WARNING: Empty value for {} will be ignored.".format(key))
+            else:
+                raise Exception(f"Empty value for {make_delta_column_name(key)}")
+    for key in deltas_del:
+        del deltas[key]
 
     decode_strings_in_dict(
         deltas,
@@ -1596,6 +1630,11 @@ def make_new_config(
         if delta == "logging/output_csv":
             continue
         new_config[DELTA_PREFIX + PREFIX_SEPARATOR + delta] = deltas[delta]
+
+    if DELTA_AFFECTS_ONLY_FIXED_PARAMS:
+        # Copy stuff from `fixed_params` to the root of the config
+        for key, value in new_config["fixed_params"].items():
+            new_config[key] = value
 
     new_config_path = os.path.join(
         exp_dir,

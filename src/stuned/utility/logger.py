@@ -1,6 +1,8 @@
 import os
 from typing import List
 
+import numpy as np
+
 from .message_client import MessageClient, MessageType
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # suppress tf warning
@@ -772,12 +774,26 @@ def try_to_log_in_socket_with_msg_type_in_batch(logger : RedneckLogger, msg_type
         logger.socket_client.sync_with_remote()
 def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True):
     # if a dict is passed, covnert to a list
+
     final_column_value_pairs = []
     if isinstance(column_value_pairs, dict):
         for key, value in column_value_pairs.items():
             final_column_value_pairs.append((key, value))
     else:
         final_column_value_pairs = column_value_pairs
+
+    # make sure the values are strings, not tensors, detached etc
+    # also possible they're on a gpu, need to move to cpu
+    for i in range(len(final_column_value_pairs)):
+        value = final_column_value_pairs[i][1]
+        if isinstance(value, torch.Tensor):
+            value = value.detach().cpu().numpy().tolist()
+            # but if it's a single value, convert to a string
+            if isinstance(value, list) and len(value) == 1:
+                value = value[0]
+        elif isinstance(value, np.ndarray):
+            value = value.tolist()
+        final_column_value_pairs[i] = (final_column_value_pairs[i][0], value)
 
     if logger.gspread_client is not None:
         if logger.socket_client is not None:
@@ -957,6 +973,14 @@ def redneck_logger_context(
             (GPU_INFO_COLUMN, gpu_info),
             (CPU_COUNT_COLUMN, cpu_cores)
         ]
+
+        # Also report all the "fixed_params" stuff from the config
+        if "fixed_params" in config_to_log_in_wandb:
+            for key, value in config_to_log_in_wandb["fixed_params"].items():
+                # make sure it's escaped properly in case of a list or so?
+                if isinstance(value, list):
+                    value = str(value).replace(',', ' ')
+                info_to_report.append(("delta:" + str(key), value))
 
         if logger.socket_client is not None:
             try_to_log_in_socket_in_batch(logger, info_to_report, sync=False)
@@ -1443,7 +1467,7 @@ class GspreadClient:
         if spreadsheet_url is None:
             new_spreadsheet = True
 
-        spreadsheet = self.get_spreadsheet_by_url(
+        spreadsheet : gspread.client = self.get_spreadsheet_by_url(
             spreadsheet_url
         )
 
@@ -1537,11 +1561,28 @@ class GspreadClient:
                                     },
                                     "rows": [{
                                         "values": [{"userEnteredValue": {"stringValue": value}} for value in
-                                                values_to_update[0]]
+                                                values_to_update[0]],
                                     }],
                                     "fields": "userEnteredValue"
                                 }
                             }
+                            # request = {
+                            #     "updateCells": {
+                            #         "range": {
+                            #             "sheetId": sheet_id,
+                            #             "startRowIndex": row_num,
+                            #             "endRowIndex": row_num + 1,
+                            #             "startColumnIndex": 0,
+                            #             "endColumnIndex": len(values_to_update[0])
+                            #         },
+                            #         "rows": [{
+                            #             "values": [{"userEnteredFormat": {"textFormat": value}} for value in
+                            #                        values_to_update[0]],
+                            #             "valueInputOption": 'USER_ENTERED'  # Add this line
+                            #         }],
+                            #         "fields": "userEnteredFormat"
+                            #     }
+                            # }
                             requests.append(request)
 
                             # Now, batch all the requests together
@@ -1549,7 +1590,6 @@ class GspreadClient:
                             "requests": requests
                         }
                         spreadsheet.batch_update(body)
-
 
                 # a1_range_to_update = worksheet_name
                 # if single_row is not None:
