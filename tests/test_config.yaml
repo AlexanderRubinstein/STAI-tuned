@@ -1,0 +1,12 @@
+experiment_name: test_experiment
+
+path0: 'hello'
+path1: '.world'
+path2: '~/machine'
+path3: '/learning'
+
+paths:
+  - 'hello'
+  - '.world'
+  - '~/machine'
+  - '/learning'
