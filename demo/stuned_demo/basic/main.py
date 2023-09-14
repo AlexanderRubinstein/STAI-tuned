@@ -87,7 +87,7 @@ def main(config):
     # except:
     #     pass
     # logger = job_manager.begin(config=config)
-    prepare_wrapper_for_experiment(check_config_for_demo_experiment)(
+    prepare_wrapper_for_experiment()(
         demo_experiment
     )()
 
