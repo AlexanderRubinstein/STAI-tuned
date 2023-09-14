@@ -1187,18 +1187,26 @@ def read_csv_as_dict_pd(
     return result
 
 
-def normalize_path(path, current_dir=None):
+def normalize_string_path(path, current_dir):
     if current_dir is None:
         current_dir = get_project_root_path()
-    if path is None:
-        return None
-    assert isinstance(path, str)
-    assert path
     path = os.path.expanduser(path)
     if path[0] == '.':
         path = os.path.join(current_dir, path)
     return os.path.abspath(path)
 
+
+def normalize_path(path, current_dir=None):
+    if path is None:
+        return None
+    if isinstance(path, str):
+        assert path
+        return normalize_string_path(path, current_dir)
+    elif isinstance(path, list):
+        assert path
+        return [normalize_string_path(p, current_dir) for p in path]
+    else:
+        raise ValueError(f"Path must be either str or list, got {type(path)}")
 
 def read_json(json_path):
     with open(json_path, 'r') as f:
