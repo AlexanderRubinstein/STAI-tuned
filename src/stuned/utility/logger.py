@@ -382,10 +382,11 @@ class RedneckLogger(BaseLogger):
 
         self.csv_output = copy.deepcopy(csv_output_config)
         if self.csv_output["spreadsheet_url"] is not None:
-            self.gspread_client = make_gspread_client(
-                self,
-                DEFAULT_GOOGLE_CREDENTIALS_PATH
-            )
+            pass
+            # self.gspread_client = make_gspread_client(
+            #     self,
+            #     DEFAULT_GOOGLE_CREDENTIALS_PATH
+            # )
 
     def log_csv(self, column_value_pairs):
         if self.csv_output is not None:
