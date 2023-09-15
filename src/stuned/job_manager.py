@@ -48,9 +48,14 @@ class JobManager():
             self.server_process.start()
 
             # Wait until server IP and port are set
-            while 'ip' not in self.server_info or 'port' not in self.server_info:
-                sleep(1)
+            # while 'ip' not in self.server_info or 'port' not in self.server_info:
+            #     sleep(1)
 
+            while True:
+                with self.manager_lock:
+                    if 'ip' in self.server_info and 'port' in self.server_info:
+                        break
+                sleep(1)
             self.server_ip = self.server_info['ip']
             self.server_port = self.server_info['port']
     
@@ -128,9 +133,10 @@ class JobManager():
             s.listen()
             actual_port = s.getsockname()[1]  # Get the port chosen by the OS
 
-            self.server_info['ip'] = HOST
-            self.server_info['port'] = actual_port
-            
+            with self.manager_lock:
+                self.server_info['ip'] = HOST
+                self.server_info['port'] = actual_port
+
             self.logger.log(f'Server listening on {HOST}:{actual_port}')
 
             while True:
