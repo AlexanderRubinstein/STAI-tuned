@@ -1208,6 +1208,7 @@ def normalize_path(path, current_dir=None):
     else:
         raise ValueError(f"Path must be either str or list, got {type(path)}")
 
+
 def read_json(json_path):
     with open(json_path, 'r') as f:
         json_contents = json.load(f)
