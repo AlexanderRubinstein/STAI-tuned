@@ -33,8 +33,8 @@ def demo_experiment(
 
     init_type = experiment_config["initialization_type"]
     # put random seed based on the timestamp of the experiment unix time
-    random.seed(datetime.now().timestamp())
-    sleep_time = random.randint(1, 15)
+    # random.seed(datetime.now().timestamp())
+    sleep_time = random.randint(1, 4)
 
     for i in range(10):
         if init_type == "random":
@@ -62,15 +62,15 @@ def demo_experiment(
         )
 
         # log like 20 metrics to csv
-        # for j in range(20):
-        #     try_to_log_in_csv(
-        #         logger,
-        #         f"metric_{j}",
-        #         i
-        #     )
+        for j in range(10):
+            try_to_log_in_csv(
+                logger,
+                f"metric_{j}",
+                random.randint(0, 100)
+            )
 
         # log latest mean in csv
-        try_to_log_in_csv(logger, "mean of latest tensor", mean + 3)
+        # try_to_log_in_csv(logger, "mean of latest tensor", mean + 3)
 
         sleep(sleep_time)
         # try_to_sync_csv_with_remote(logger)

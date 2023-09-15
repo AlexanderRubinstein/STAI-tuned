@@ -2,7 +2,7 @@ fixed_params:
   initialization_type: 1
   image:
       shape: [64, 64]
-      color: red
+      color: white
   params:
     random_seed: 42
 logging:

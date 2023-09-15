@@ -5,7 +5,7 @@ delta:fixed_params/image/shape: &id001
 - 32
 - 32
 delta:fixed_params/initialization_type: 1
-delta:fixed_params/params/random_seed: 1
+delta:fixed_params/params/random_seed: 7
 delta:logging/server_ip: 192.168.178.21
 delta:logging/server_port: 57999
 delta:run_locally: true
@@ -19,14 +19,14 @@ fixed_params:
     shape: *id001
   initialization_type: 1
   params: &id003
-    random_seed: 1
+    random_seed: 7
 image: *id002
 initialization_type: 1
 logging:
   gdrive_storage_folder: https://drive.google.com/drive/u/0/folders/12_wdaaWk_bCRpEnbO5K8cEWiClDp_mtc
   output_csv:
     path: /home/nas/Documents/STAI-tuned/inputs/https:(slash)(slash)docs.google.com(slash)spreadsheets(slash)d(slash)1kzlSPZV0247SGRW9tIqPjOXZukaIdZyXOIVyVHUts8k(slash)/basic-demo.csv
-    row_number: 1
+    row_number: 17
     spreadsheet_url: https://docs.google.com/spreadsheets/d/1kzlSPZV0247SGRW9tIqPjOXZukaIdZyXOIVyVHUts8k/edit#gid=1821235469
     worksheet_name: basic-demo
   server_ip: 192.168.178.21

@@ -141,7 +141,7 @@ class JobManager():
 
             while True:
                 client, addr = s.accept()
-                self.logger.log('Connected by', addr)
+                # self.logger.log('Connected by', addr)
                 # Using threading here to handle multiple clients in the same process
                 threading.Thread(target=self.handle_client, args=(client, self.queue)).start()
 

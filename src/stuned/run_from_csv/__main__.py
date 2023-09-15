@@ -427,7 +427,7 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
 
     current_sleep_duration = 1  # Start with 3 seconds
     sleep_increment = 1  # Increment by 3 seconds each time
-    max_sleep_duration = 30  # Maximum sleep duration
+    max_sleep_duration = 3  # Maximum sleep duration
 
     # local_jobs_dict = {}
     
@@ -435,31 +435,6 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
     check_for_full_updates_every = 60
     
     while not should_exit:
-        # if run_locally:
-        #     with lock_manager:
-        #         shared_jobs_copy = dict(shared_jobs_dict)
-        #
-        #
-        #     with lock_manager:
-        #         # Identify rows that have updates
-        #         updated_rows = [row_id for row_id, job in shared_jobs_dict.items() if
-        #                         local_jobs_dict.get(row_id) != job]
-        #
-        #         # For each updated row, add the necessary updates to the gsheet_updater queue
-        #         for row_id in updated_rows:
-        #             job = shared_jobs_dict[row_id]
-        #             gsheet_updater.add_to_queue(row_id, MONITOR_STATUS_COLUMN, job["status"])
-        #             if "exit_code" in job:
-        #                 gsheet_updater.add_to_queue(row_id, MONITOR_EXIT_CODE_COLUMN,
-        #                                             f"{job['exit_code']}")
-        #
-        #     # Count the statuses
-        #     submitted = submitted_jobs.value
-        #     running = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Running")
-        #     finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
-        #     failed = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Failed")
-        # else:
-        # Create a copy of shared_jobs_dict to track changes
         with lock_manager:
             shared_jobs_copy = dict(shared_jobs_dict)
         with job_manager.manager_lock:
@@ -507,45 +482,6 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
             logger.log("All jobs finished.")
             break
 
-    # If we're exiting due to a signal, terminate the jobs
-    exited_jobs = 0
-    # if should_exit:
-    #     if run_locally:
-    #         running_jobs = sum(1 for job in local_jobs_dict.values() if job["status"] == "running")
-    #         logger.log(f"Number of jobs that were running: {running_jobs}")
-    #
-    #         grace_period = 60
-    #
-    #         for second in range(1, grace_period + 1):
-    #             with lock_manager:
-    #                 for idx, (row_id, job) in enumerate(shared_jobs_dict.items()):
-    #                     if job["status"] == "failed" and "reported" not in local_jobs_dict[row_id]:
-    #                         # Status has changed
-    #                         local_jobs_dict[row_id]["reported"] = True
-    #
-    #                         if job["status"] == "failed":
-    #                             exited_jobs += 1
-    #
-    #                         # Update the status and last update columns in the beginning
-    #                         if gsheet_updater is not None:
-    #                             gsheet_updater.add_to_queue(shared_row_numbers_lst[idx], MONITOR_STATUS_COLUMN,
-    #                                                         job["status"])
-    #                             if "exit_code" in job:
-    #                                 gsheet_updater.add_to_queue(shared_row_numbers_lst[idx], MONITOR_EXIT_CODE_COLUMN,
-    #                                                             job["exit_code"])
-    #
-    #             logger.log(f"{second}/{grace_period} seconds trying, {exited_jobs}/{running_jobs} jobs exited")
-    #
-    #             # Break the loop if all processes have exited
-    #             if exited_jobs == running_jobs:
-    #                 logger.log("All jobs terminated.")
-    #                 break
-    #
-    #             time.sleep(3)  # Sleep for 1 second
-    #     else:
-        # SLURM logic here
-        # Get all jobs's IDs that are not finished or failed already
-        # TODO: lock it probably
     if should_exit:
         running_job_ids = [job.job_id for job in job_manager.jobs if job.job_status in JobStatus.PENDING or job.job_status in JobStatus.RUNNING or (job.job_status is not None and job.job_status.startswith(JobStatus.UNKNOWN + "_"))]
         logger.log(f"Number of jobs that were running: {len(running_job_ids)}")
@@ -564,13 +500,6 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
         grace_period = 300
         # TODO: update these things in the manager itself, not outside it
         for second in range(1, grace_period + 1):
-            # Check the status of the jobs using squeue
-            #
-            # if not run_locally:
-            #     all_jobs = get_all_slurm_jobs()
-            #
-            #     still_running = sum(1 for job_id in running_job_ids if job_id in all_jobs)
-            # else:
             with lock_manager:
                 shared_jobs_copy = dict(shared_jobs_dict)
 

@@ -26,7 +26,7 @@ logging:
   gdrive_storage_folder: https://drive.google.com/drive/u/0/folders/12_wdaaWk_bCRpEnbO5K8cEWiClDp_mtc
   output_csv:
     path: /home/nas/Documents/STAI-tuned/inputs/https:(slash)(slash)docs.google.com(slash)spreadsheets(slash)d(slash)1kzlSPZV0247SGRW9tIqPjOXZukaIdZyXOIVyVHUts8k(slash)/basic-demo.csv
-    row_number: 1
+    row_number: 12
     spreadsheet_url: https://docs.google.com/spreadsheets/d/1kzlSPZV0247SGRW9tIqPjOXZukaIdZyXOIVyVHUts8k/edit#gid=1821235469
     worksheet_name: basic-demo
   server_ip: 192.168.178.21

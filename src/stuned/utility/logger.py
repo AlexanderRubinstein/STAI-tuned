@@ -975,12 +975,29 @@ def redneck_logger_context(
         ]
 
         # Also report all the "fixed_params" stuff from the config
+        supported_types = [int, float, str, bool, list, tuple, dict]
+
+        def clean_list_string(lst):
+            # Convert list to string, replace commas with spaces, and then remove any double spaces
+            return ' '.join(str(lst).replace(',', ' ').split())
+
+        def flatten_config(config, parent_key='', sep='/'):
+            items = {}
+            for k, v in config.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.update(flatten_config(v, new_key, sep=sep))
+                elif isinstance(v, list):
+                    items[new_key] = clean_list_string(v)
+                else:
+                    items[new_key] = v
+            return items
+
         if "fixed_params" in config_to_log_in_wandb:
-            for key, value in config_to_log_in_wandb["fixed_params"].items():
-                # make sure it's escaped properly in case of a list or so?
-                if isinstance(value, list):
-                    value = str(value).replace(',', ' ')
-                info_to_report.append(("delta:" + str(key), value))
+            flattened = flatten_config(config_to_log_in_wandb["fixed_params"])
+            deltas_to_report =  [("delta:" + k, v) for k, v in flattened.items()]
+
+        info_to_report = info_to_report + deltas_to_report
 
         if logger.socket_client is not None:
             try_to_log_in_socket_in_batch(logger, info_to_report, sync=False)
@@ -1158,7 +1175,7 @@ def redneck_logger_context(
             log_finish_results
         )
     logger.log("Final log line for remote logs!")
-    if not logger.socket_client:
+    if logger.socket_client:
         logger.socket_client.sync_with_remote()
     else:
         try_to_sync_csv_with_remote(logger)
