@@ -1252,7 +1252,7 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
                 else:
                     logger.log("Failed to extract job ID from the output.")
 
-                logger.log(f"Job ID: {job_id}")
+                # logger.log(f"Job ID: {job_id}")
             except subprocess.CalledProcessError as e:
                 print(f"Command failed with error: {e.output.decode('utf-8')}")
             except subprocess.TimeoutExpired:
