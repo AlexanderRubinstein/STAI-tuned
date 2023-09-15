@@ -34,8 +34,12 @@ def demo_experiment(
     init_type = experiment_config["initialization_type"]
     # put random seed based on the timestamp of the experiment unix time
     # random.seed(datetime.now().timestamp())
-    sleep_time = random.randint(1, 4)
+    if init_type == "2" or init_type == 2:
+        sleep_time = random.randint(7, 15)
+    else:
+        sleep_time = random.randint(1, 4)
 
+    try_to_log_in_csv(logger, "color_required", experiment_config["image"]["color"])
     for i in range(10):
         if init_type == "random":
             colored_image[channel] = torch.randn(image_size)
@@ -76,7 +80,6 @@ def demo_experiment(
         # try_to_sync_csv_with_remote(logger)
 
         colored_image[:, :, :] = 0
-
 
 
 def main(config):

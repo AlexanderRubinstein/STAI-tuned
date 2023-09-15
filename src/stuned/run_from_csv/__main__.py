@@ -403,7 +403,8 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
         # Prepare the updates
         "status	walltime	starttime	endtime	WandB url	stdout	stderr"
         # TODO: make this more robust
-        reset_columns = ["status", "walltime", "starttime", "endtime", "WandB url", "stdout", "stderr"]
+        reset_columns = ["status", "walltime", "starttime", "endtime", "WandB url", "stdout", "stderr", "slurm_job_id_monitor",
+                         "gpu_info", "cpu_count", "exit_code_monitor", "last_update_monitor"]
         column_value_pairs = [
             (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
             (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
@@ -1148,15 +1149,18 @@ submitted_jobs = mp.Value('i', 0)
 submitted_jobs_lock = mp.Lock()
 
 
-def update_job_status(process, shared_jobs_dict, row_id, lock_manager):
+def update_job_status(process, shared_jobs_dict, row_id, lock_manager, cancelled=False):
     """Update the job status and exit code in the shared dictionary."""
     with lock_manager:
         # print(f"Before update: {shared_jobs_dict[row_id]}")
         job_data = shared_jobs_dict[row_id].copy()  # Get a local copy
-        if process.returncode == 0:
-            job_data["status"] = JobStatus.COMPLETED
+        if cancelled:
+            job_data["status"] = JobStatus.CANCELLED
         else:
-            job_data["status"] = JobStatus.FAILED
+            if process.returncode == 0:
+                job_data["status"] = JobStatus.COMPLETED
+            else:
+                job_data["status"] = JobStatus.FAILED
         job_data["exit_code"] = process.returncode
         shared_jobs_dict[row_id] = job_data  # Set the modified data back
         # print(f"After update: {shared_jobs_dict[row_id]}")
@@ -1216,7 +1220,7 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
                         process.terminate()
 
                     # Update the job status after forcefully terminating
-                    update_job_status(process, shared_jobs_dict, row_id, lock_manager)
+                    update_job_status(process, shared_jobs_dict, row_id, lock_manager, cancelled=True)
                     return 1
                     # return 404
 
