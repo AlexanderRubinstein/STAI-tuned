@@ -374,20 +374,19 @@ class RedneckLogger(BaseLogger):
         self.gdrive_daemon.start()
 
 
-    def set_csv_output(self, csv_output_config):
+    def set_csv_output(self, csv_output_config, use_socket = False):
         self.csv_output = {}
         assert PATH_KEY in csv_output_config
         assert ROW_NUMBER_KEY in csv_output_config
         assert os.path.exists(csv_output_config[PATH_KEY])
 
         self.csv_output = copy.deepcopy(csv_output_config)
-        if self.csv_output["spreadsheet_url"] is not None:
+        if self.csv_output["spreadsheet_url"] is not None and not use_socket:
             # TODO: uncomment this!!!!!!!!!!!!!!!!!!
-            pass
-            # self.gspread_client = make_gspread_client(
-            #     self,
-            #     DEFAULT_GOOGLE_CREDENTIALS_PATH
-            # )
+            self.gspread_client = make_gspread_client(
+                self,
+                DEFAULT_GOOGLE_CREDENTIALS_PATH
+            )
 
     def log_csv(self, column_value_pairs):
         if self.csv_output is not None:
@@ -797,21 +796,21 @@ def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True)
             value = value.tolist()
         final_column_value_pairs[i] = (final_column_value_pairs[i][0], value)
 
-    if logger.gspread_client is not None:
-        if logger.socket_client is not None:
-            return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
-        else:
-            try_to_log_in_csv_in_batch(logger, final_column_value_pairs)
-            if sync:
-                try_to_sync_csv_with_remote(logger)
+    # if logger.gspread_client is not None:
+    if logger.socket_client is not None:
+        return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
+    else:
+        try_to_log_in_csv_in_batch(logger, final_column_value_pairs)
+        if sync:
+            try_to_sync_csv_with_remote(logger)
 
 def log_to_sheet_with_msg_type_in_batch(logger : RedneckLogger, msg_type_column_value_pairs, sync=True):
-    if logger.gspread_client is not None:
-        if logger.socket_client is not None:
-            for msg_type, column_value_pairs in msg_type_column_value_pairs.items():
-                try_to_log_in_socket_in_batch(logger, column_value_pairs, sync=sync)
-        else:
-            raise NotImplementedError("Message type logging is not implemented for csv logging")
+    # if logger.gspread_client is not None:
+    if logger.socket_client is not None:
+        for msg_type, column_value_pairs in msg_type_column_value_pairs.items():
+            try_to_log_in_socket_in_batch(logger, column_value_pairs, sync=sync)
+    else:
+        raise NotImplementedError("Message type logging is not implemented for csv logging")
 
 
 def try_to_sync_csv_with_remote(logger, sync_row_zero=True, report_aux=True, update_only_local_cols=False):
@@ -959,7 +958,7 @@ def redneck_logger_context(
         if not os.path.exists(output_csv_path):
             touch_file(output_csv_path)
         logger.set_csv_output(
-            logging_config[OUTPUT_CSV_KEY]
+            logging_config[OUTPUT_CSV_KEY], using_socket
         )
         # Get some other things too: cuda information, CPU count
         # and other things that are not in the config
