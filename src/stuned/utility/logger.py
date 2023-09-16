@@ -1417,7 +1417,7 @@ class GspreadClient:
     ):
         self.logger = logger
         self.gspread_credentials = gspread_credentials
-        self.client = self._create_client()
+        self.client : gspread.client = self._create_client()
 
         self.cache_spreadsheet = cache_spreadsheet
         self.opened_spreadsheet = None
@@ -1460,6 +1460,21 @@ class GspreadClient:
         else:
             self.opened_spreadsheet = self.client.open_by_url(spreadsheet_url)
             return self.opened_spreadsheet
+
+    @retrier_factory_with_auto_logger()
+    def get_worksheet_by_url(self, spreadsheet_url, worksheet_name):
+        opened_spreadsheet = self.get_spreadsheet_by_url(spreadsheet_url)
+
+        existing_worksheets = list(opened_spreadsheet.worksheets())
+
+        referenced_worksheet = None
+        for worksheet in existing_worksheets:
+            if worksheet.title == worksheet_name:
+                referenced_worksheet = worksheet
+        assert referenced_worksheet is not None, \
+            f"Could not find worksheet with name {worksheet_name} in spreadsheet {spreadsheet_url}"
+        return referenced_worksheet
+
 
 
     @retrier_factory_with_auto_logger()
