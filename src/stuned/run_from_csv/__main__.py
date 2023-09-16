@@ -143,6 +143,12 @@ def parse_args():
         action="store_true",
         help="whether to use a socket for communication with the server"
     )
+
+    parser.add_argument(
+        "--disable_local_loging",
+        action="store_true",
+        help="whether to disable logging to wandb and g drive for local runs"
+    )
     return parser.parse_args()
 
 
@@ -1054,6 +1060,8 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
     args = parse_args()
 
     use_socket = args.use_socket if args.use_socket is not None else False
+    # TODO: give a more descriptive and accurate name
+    disable_local_loging = args.disable_local_loging if args.disable_local_loging is not None else False
 
     logger = make_logger()
 
@@ -1119,6 +1127,7 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                 len(inputs_csv),
                 job_manager.server_ip,
                 job_manager.server_port,
+                disable_local_loging
             )
             for row_number, csv_row in inputs_csv.items()
         ]
@@ -1415,6 +1424,7 @@ def process_csv_row(
         total_rows,
         server_ip,
         server_port,
+        disable_local_loging
 ):
     assert not spreadsheet_url or worksheet_name is not None, (
         "`worksheet_name` is None but this is not allowed when remote sheet is used;"
@@ -1451,6 +1461,11 @@ def process_csv_row(
         exp_name = os.path.basename(exp_dir)
 
         default_config = read_yaml(default_config_path)
+
+        if disable_local_loging:
+            if "logging" in default_config and isinstance(default_config["logging"], dict):
+                default_config["logging"]["use_wandb"] = False
+                default_config["logging"]["gdrive_storage_folder"] = None
 
         _, new_config_path = make_new_config(
             csv_row,
