@@ -1,0 +1,40 @@
+delta:fixed_params/exp_group_name: basic-demo
+delta:fixed_params/exp_name: short sleep time
+delta:fixed_params/image/color: white
+delta:fixed_params/image/shape: &id001
+- 32
+- 32
+delta:fixed_params/initialization_type: 1
+delta:fixed_params/params/random_seed: 9
+delta:logging/server_ip: 192.168.178.21
+delta:logging/server_port: 57999
+delta:run_locally: true
+exp_group_name: basic-demo
+exp_name: short sleep time
+fixed_params:
+  exp_group_name: basic-demo
+  exp_name: short sleep time
+  image: &id002
+    color: white
+    shape: *id001
+  initialization_type: 1
+  params: &id003
+    random_seed: 9
+image: *id002
+initialization_type: 1
+logging:
+  gdrive_storage_folder: https://drive.google.com/drive/u/0/folders/12_wdaaWk_bCRpEnbO5K8cEWiClDp_mtc
+  output_csv:
+    path: /home/nas/Documents/STAI-tuned/inputs/https:(slash)(slash)docs.google.com(slash)spreadsheets(slash)d(slash)1kzlSPZV0247SGRW9tIqPjOXZukaIdZyXOIVyVHUts8k(slash)/basic-demo.csv
+    row_number: 29
+    spreadsheet_url: https://docs.google.com/spreadsheets/d/1kzlSPZV0247SGRW9tIqPjOXZukaIdZyXOIVyVHUts8k/edit#gid=1821235469
+    worksheet_name: basic-demo
+  server_ip: 192.168.178.21
+  server_port: 57999
+  use_tb: false
+  use_wandb: false
+  wandb:
+    netrc_path: ~/.netrc
+params: *id003
+run_locally: true
+use_hardcoded_config: false

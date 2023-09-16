@@ -1,0 +1,15 @@
+fixed_params:
+  initialization_type: 1
+  image:
+      shape: [64, 64]
+      color: white
+  params:
+    random_seed: 42
+logging:
+  gdrive_storage_folder: https://drive.google.com/drive/u/0/folders/12_wdaaWk_bCRpEnbO5K8cEWiClDp_mtc
+#  use_wandb: True
+  use_wandb: False
+  wandb:
+    netrc_path: "~/.netrc"
+  use_tb: False
+use_hardcoded_config: False
