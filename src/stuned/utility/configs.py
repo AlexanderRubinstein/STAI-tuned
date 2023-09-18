@@ -1,5 +1,5 @@
 import os
-
+import warnings
 
 # local modules
 from .logger import make_logger
@@ -21,7 +21,12 @@ START_TIME_CONFIG_KEY = "start_time"
 RUN_PATH_CONFIG_KEY = "current_run_folder"
 TYPE_KEY = "type"
 ANY_KEY = "any"
-NESTED_CONFIG_KEY_SEPARATOR = '/'
+NESTED_CONFIG_KEY_SEPARATOR = '.'
+if NESTED_CONFIG_KEY_SEPARATOR != '/':
+    warnings.warn("=====================================================")
+    warnings.warn("WARNING!!!! Arnas changed the `NESTED_CONFIG_KEY_SEPARATOR` from '/' to '{}'"
+                  "\nPlease urge him to get his separators straight!".format(NESTED_CONFIG_KEY_SEPARATOR))
+    warnings.warn("=====================================================")
 
 
 def make_csv_config(
