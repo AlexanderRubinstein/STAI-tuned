@@ -463,7 +463,7 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
         running = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.RUNNING)
         # finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
         finished_successfully = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.COMPLETED)
-        failed = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.FAILED or job.job_status == JobStatus.CANCELLED)
+        failed = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.FAILED or job.job_status == JobStatus.CANCELLED or job.job_status == JobStatus.TIMEOUT)
 
         # Display progress and status
         last_update_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')

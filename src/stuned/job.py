@@ -12,15 +12,18 @@ class JobStatus:
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
     UNKNOWN = "unknown"
     
     slurm_submitted_statuses = ["PENDING", "CONFIGURING"]
     slurm_running_statuses = ["RUNNING", "COMPLETING"]
     slurm_failed_statuses = ["FAILED"]
+    slurm_timeout_statuses = ["TIMEOUT"]
     slurm_cancelled_statuses = ["CANCELLED", "CANCELLED+"]
     slurm_completed_statuses = ["COMPLETED", "COMPLETED+"]
     
 def get_slurm_job_status(slurm_status : str) -> str:
+    # TODO: rewrite this as a dict check xD
     if slurm_status in JobStatus.slurm_running_statuses:
         job_status = JobStatus.RUNNING
     elif slurm_status in JobStatus.slurm_completed_statuses:
@@ -31,6 +34,8 @@ def get_slurm_job_status(slurm_status : str) -> str:
         job_status = JobStatus.FAILED
     elif slurm_status in JobStatus.slurm_cancelled_statuses:
         job_status = JobStatus.CANCELLED
+    elif slurm_status in JobStatus.slurm_timeout_statuses:
+        job_status = JobStatus.TIMEOUT
     else:
         job_status = JobStatus.UNKNOWN + "_" + slurm_status
     return job_status
