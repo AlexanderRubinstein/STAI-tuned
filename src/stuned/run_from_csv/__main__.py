@@ -81,7 +81,7 @@ DEV_NULL = "/dev/null"
 DEFAULT_SLURM_ARGS_DICT = {
     "partition": "gpu-2080ti-beegfs",
     "gpus": 1,
-    "time": "02:00:00",
+    "time": "06:00:00",
     "ntasks": 1,
     "cpus-per-task": 2,
     "error": DEV_NULL,
@@ -545,9 +545,23 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
 
     # stop the server
     if job_manager.open_socket:
-        logger.log("Stopping the server...")
-        exit_code = job_manager.server_process.terminate()
-        logger.log(f"Server stopped with exit code {exit_code}")
+        logger.log("Attempting to stop the server...")
+
+        # Try sending a SIGTERM first
+        os.kill(job_manager.server_process.pid, signal.SIGTERM)
+        time.sleep(2)  # Give it a mment to terminate
+
+        # If the process is still alive, send a SIGKILL
+        if job_manager.server_process.is_alive():
+            logger.log("Server did not respond to SIGTERM. Sending SIGKILL...")
+            os.kill(job_manager.server_process.pid, signal.SIGKILL)
+            time.sleep(1)  # Give it a moment to ensure it's killed
+
+        if not job_manager.server_process.is_alive():
+            logger.log("Server stopped successfully.")
+        else:
+            logger.log("Failed to stop the server.")
+    os._exit(0)
     sys.exit(0)
 
 

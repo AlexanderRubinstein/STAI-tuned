@@ -80,6 +80,7 @@ class JobManager():
                 # Should we create a new job?
                 job = Job(job_id, None, None, None)
                 self.jobs.append(job)
+                job_idx = len(self.jobs) - 1
                 
             # Unsure if this will update the job in the list
             job.process_message(message)
