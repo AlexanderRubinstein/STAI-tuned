@@ -34,7 +34,6 @@ import psutil
 import multiprocessing as mp
 from tempfile import NamedTemporaryFile
 
-
 # local modules
 from .utils import (
     QUOTE_CHAR,

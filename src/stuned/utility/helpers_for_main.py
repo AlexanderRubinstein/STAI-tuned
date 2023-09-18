@@ -80,7 +80,6 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                     logger
                 )
 
-
                 using_socket = False
                 # Check if socket is being used
                 if "logging" in experiment_config and "server_ip" in experiment_config["logging"] and "server_port" in experiment_config["logging"]:

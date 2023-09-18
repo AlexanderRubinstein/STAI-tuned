@@ -1571,22 +1571,22 @@ def make_new_config(
         list_end_symbol=']'
     )
 
-    deltas["logging/output_csv"] = make_csv_config(
+    deltas[f"logging{NESTED_CONFIG_KEY_SEPARATOR}output_csv"] = make_csv_config(
         input_csv_path,
         row_number,
         spreadsheet_url,
         worksheet_name
     )
     
-    deltas["logging/server_ip"] = server_ip
-    deltas["logging/server_port"] = server_port
+    deltas[f"logging{NESTED_CONFIG_KEY_SEPARATOR}server_ip"] = server_ip
+    deltas[f"logging{NESTED_CONFIG_KEY_SEPARATOR}server_port"] = server_port
 
     deltas["run_locally"] = run_locally
         
     new_config = make_config_from_default_and_deltas(default_config, deltas)
     # make sure we preserve deltas though
     for delta in deltas:
-        if delta == "logging/output_csv":
+        if delta == f"logging{NESTED_CONFIG_KEY_SEPARATOR}output_csv":
             continue
         new_config[DELTA_PREFIX + PREFIX_SEPARATOR + delta] = deltas[delta]
 

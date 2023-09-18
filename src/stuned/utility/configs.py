@@ -91,7 +91,7 @@ def get_config(config_path, logger=None):
 def find_nested_keys_by_keyword_in_config(
     config,
     keyword,
-    separator='/',
+    separator=NESTED_CONFIG_KEY_SEPARATOR,
     prefix=""
 ):
     if isinstance(config, dict):
@@ -113,7 +113,7 @@ def find_nested_keys_by_keyword_in_config(
     return []
 
 
-def normalize_paths(config, nested_keys, separator='/'):
+def normalize_paths(config, nested_keys, separator=NESTED_CONFIG_KEY_SEPARATOR):
     for key in nested_keys:
         apply_func_to_dict_by_nested_key(
             config,
