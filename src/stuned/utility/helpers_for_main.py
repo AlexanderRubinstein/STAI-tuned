@@ -10,9 +10,9 @@ from .utils import (
     get_project_root_path
 )
 from .configs import (
-    EXP_NAME_CONFIG_KEY,
     get_config
 )
+from .constants import EXP_NAME_CONFIG_KEY
 from .logger import (
     LOGGING_CONFIG_KEY,
     make_logger_with_tmp_output_folder,

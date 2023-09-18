@@ -3,6 +3,13 @@ from typing import List
 
 import numpy as np
 
+from .constants import NESTED_CONFIG_KEY_SEPARATOR, PROGRESS_FREQUENCY, INDENT, LOGGER_ARG_NAME, CONTROL_PREFIX, \
+    CONTROL_SUFFIX, CONTROL_SEPARATOR, DEFAULT_TEXT_STYLE, BOLD_TEXT_STYLE, BLACK_COLOR_CODE, RED_COLOR_CODE, \
+    GREEN_COLOR_CODE, PURPLE_COLOR_CODE, WHITE_COLOR_CODE, DEFAULT_EXPERIMENT, DEFAULT_NAME_PREFIX, LOG_PREFIX, \
+    INFO_PREFIX, ERROR_PREFIX, MAX_LINE_LENGTH, SEPARATOR, STATUS_CSV_COLUMN, RUN_FOLDER_CSV_COLUMN, WALLTIME_COLUMN, \
+    FIRST_REPORT_TIME_COLUMN, LAST_REPORT_TIME_COLUMN, RUNNING_STATUS, COMPLETED_STATUS, FAIL_STATUS, \
+    WHETHER_TO_RUN_COLUMN, OUTPUT_CSV_KEY, PATH_KEY, ROW_NUMBER_KEY, GDRIVE_FOLDER_KEY, STDOUT_KEY, STDERR_KEY, \
+    WANDB_URL_COLUMN, WANDB_QUIET, WANDB_INIT_RETRIES, WANDB_SLEEP_BETWEEN_INIT_RETRIES, PROJECT_KEY
 from .message_client import MessageClient, MessageType
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # suppress tf warning
@@ -54,7 +61,6 @@ from .utils import (
     get_hostname,
     get_system_root_path,
     raise_unknown,
-    assert_two_values_are_close,
     folder_still_has_updates,
     as_str_for_csv,
     remove_file_or_folder,
@@ -64,70 +70,6 @@ from .utils import (
     itself_and_lower_upper_case,
     get_with_assert, current_time_formatted
 )
-
-
-PROGRESS_FREQUENCY = 0.01
-INDENT = "    "
-LOGGER_ARG_NAME = "logger"
-
-
-# string style
-CONTROL_PREFIX = "\033["
-CONTROL_SUFFIX = "m"
-CONTROL_SEPARATOR = ";"
-DEFAULT_TEXT_STYLE = "0"
-BOLD_TEXT_STYLE = "1"
-BLACK_COLOR_CODE = "40"
-RED_COLOR_CODE = "31"
-GREEN_COLOR_CODE = "32"
-BLUE_COLOR_CODE = "34"
-PURPLE_COLOR_CODE = "35"
-CYAN_COLOR_CODE = "36"
-WHITE_COLOR_CODE = "37"
-
-
-# tmp folder name
-DEFAULT_EXPERIMENT = "unknown_experiment"
-DEFAULT_NAME_PREFIX = "_"
-
-
-# logger messages
-LOG_PREFIX = "(log)"
-INFO_PREFIX = "(info)"
-ERROR_PREFIX = "(error)"
-MAX_LINE_LENGTH = 80
-SEPARATOR = "".join(["="] * MAX_LINE_LENGTH)
-
-STATUS_CSV_COLUMN = "status"
-RUN_FOLDER_CSV_COLUMN = "run_folder"
-WALLTIME_COLUMN = "walltime"
-
-FIRST_REPORT_TIME_COLUMN = "starttime"
-LAST_REPORT_TIME_COLUMN = "endtime"
-
-
-SUBMITTED_STATUS = "Submitted"
-RUNNING_STATUS = "Running"
-COMPLETED_STATUS = "Completed"
-FAIL_STATUS = "Fail"
-WHETHER_TO_RUN_COLUMN = "whether_to_run"
-
-
-OUTPUT_CSV_KEY = "output_csv"
-PATH_KEY = "path"
-ROW_NUMBER_KEY = "row_number"  # starts with 0
-GDRIVE_FOLDER_KEY = "gdrive_storage_folder"
-STDOUT_KEY = "stdout"
-STDERR_KEY = "stderr"
-
-
-# wandb
-WANDB_URL_COLUMN = "WandB url"
-WANDB_QUIET = True
-WANDB_INIT_RETRIES = 100
-WANDB_SLEEP_BETWEEN_INIT_RETRIES = 60
-PROJECT_KEY = "project"
-
 
 # Tensorboard
 TB_CREDENTIALS_FIELDS = [
@@ -982,7 +924,10 @@ def redneck_logger_context(
             # Convert list to string, replace commas with spaces, and then remove any double spaces
             return ' '.join(str(lst).replace(',', ' ').split())
 
-        def flatten_config(config, parent_key='', sep='/'):
+        def flatten_config(config, parent_key='', sep='.'):
+            if sep != NESTED_CONFIG_KEY_SEPARATOR:
+                warnings.warn(f"Nested config key separator is not {NESTED_CONFIG_KEY_SEPARATOR}, but {sep}. "
+                             f"Makes sure this is intended.")
             items = {}
             for k, v in config.items():
                 new_key = f"{parent_key}{sep}{k}" if parent_key else k

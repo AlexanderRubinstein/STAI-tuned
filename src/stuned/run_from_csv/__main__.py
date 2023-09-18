@@ -43,14 +43,11 @@ from stuned.utility.utils import (
     is_number
 )
 from stuned.utility.configs import (
-    AUTOGEN_PREFIX,
-    NESTED_CONFIG_KEY_SEPARATOR,
     make_csv_config
 )
+from stuned.utility.constants import AUTOGEN_PREFIX, NESTED_CONFIG_KEY_SEPARATOR, STATUS_CSV_COLUMN, SUBMITTED_STATUS, \
+    WHETHER_TO_RUN_COLUMN
 from stuned.utility.logger import (
-    STATUS_CSV_COLUMN,
-    SUBMITTED_STATUS,
-    WHETHER_TO_RUN_COLUMN,
     DELTA_PREFIX,
     SLURM_PREFIX,
     PREFIX_SEPARATOR,
