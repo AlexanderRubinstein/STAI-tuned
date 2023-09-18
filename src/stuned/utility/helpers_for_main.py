@@ -1,6 +1,6 @@
 import argparse
 import git
-
+import gspread
 
 # local modules
 from .utils import (
@@ -59,7 +59,6 @@ def parse_args():
     parser.add_argument("--config_path", type=str, required=True,
                         help="path to config file")
     return parser.parse_args()
-
 
 def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
 
@@ -143,3 +142,41 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
         return run_experiment_with_logger
 
     return wrapper_for_experiment
+
+
+def get_rows_from_gsheet(worksheet, row_ids: list) -> list:
+    """
+    Fetches rows from a Google Sheet based on the provided row IDs.
+
+    :param worksheet: The gspread worksheet object.
+    :param row_ids: A list of row numbers to fetch.
+    :return: A list of lists where each inner list represents a row's values.
+    """
+
+    # Since we don't know the last column, let's use the maximum possible column letter 'ZZZ'
+    # (this is a workaround since gspread doesn't provide a direct way to fetch entire rows without specifying the end column)
+    ranges = [f'A{row_id}:ZZZ{row_id}' for row_id in row_ids]
+
+    # Fetch the rows with a single API call
+    rows_data = worksheet.batch_get(ranges)
+
+    rows_data = [row[0] for row in rows_data]
+
+    return rows_data
+
+def get_key_vals_of_row(worksheet, row_id):
+    """
+    Fetches the key-value pairs of a row from a Google Sheet.
+
+    :param worksheet: The gspread worksheet object.
+    :param row_id: The row number to fetch.
+    :return: A dictionary of key-value pairs.
+    """
+
+    # Fetch the row
+    row_data = get_rows_from_gsheet(worksheet, [1, row_id])
+
+    # Convert the row to a dictionary
+    key_vals = dict(zip(row_data[0], row_data[1]))
+
+    return key_vals

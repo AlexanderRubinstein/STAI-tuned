@@ -52,7 +52,7 @@ class MessageClient:
         retries = 50
         retry_delay = 2
 
-        message_str = "DUMMY-MSG"
+        message_str = ""
 
         for _ in range(retries):
             try:

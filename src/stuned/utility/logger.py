@@ -374,14 +374,15 @@ class RedneckLogger(BaseLogger):
         self.gdrive_daemon.start()
 
 
-    def set_csv_output(self, csv_output_config):
+    def set_csv_output(self, csv_output_config, use_socket = False):
         self.csv_output = {}
         assert PATH_KEY in csv_output_config
         assert ROW_NUMBER_KEY in csv_output_config
         assert os.path.exists(csv_output_config[PATH_KEY])
 
         self.csv_output = copy.deepcopy(csv_output_config)
-        if self.csv_output["spreadsheet_url"] is not None:
+        if self.csv_output["spreadsheet_url"] is not None and not use_socket:
+            # TODO: uncomment this!!!!!!!!!!!!!!!!!!
             self.gspread_client = make_gspread_client(
                 self,
                 DEFAULT_GOOGLE_CREDENTIALS_PATH
@@ -795,21 +796,21 @@ def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True)
             value = value.tolist()
         final_column_value_pairs[i] = (final_column_value_pairs[i][0], value)
 
-    if logger.gspread_client is not None:
-        if logger.socket_client is not None:
-            return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
-        else:
-            try_to_log_in_csv_in_batch(logger, final_column_value_pairs)
-            if sync:
-                try_to_sync_csv_with_remote(logger)
+    # if logger.gspread_client is not None:
+    if logger.socket_client is not None:
+        return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
+    else:
+        try_to_log_in_csv_in_batch(logger, final_column_value_pairs)
+        if sync:
+            try_to_sync_csv_with_remote(logger)
 
 def log_to_sheet_with_msg_type_in_batch(logger : RedneckLogger, msg_type_column_value_pairs, sync=True):
-    if logger.gspread_client is not None:
-        if logger.socket_client is not None:
-            for msg_type, column_value_pairs in msg_type_column_value_pairs.items():
-                try_to_log_in_socket_in_batch(logger, column_value_pairs, sync=sync)
-        else:
-            raise NotImplementedError("Message type logging is not implemented for csv logging")
+    # if logger.gspread_client is not None:
+    if logger.socket_client is not None:
+        for msg_type, column_value_pairs in msg_type_column_value_pairs.items():
+            try_to_log_in_socket_in_batch(logger, column_value_pairs, sync=sync)
+    else:
+        raise NotImplementedError("Message type logging is not implemented for csv logging")
 
 
 def try_to_sync_csv_with_remote(logger, sync_row_zero=True, report_aux=True, update_only_local_cols=False):
@@ -957,7 +958,7 @@ def redneck_logger_context(
         if not os.path.exists(output_csv_path):
             touch_file(output_csv_path)
         logger.set_csv_output(
-            logging_config[OUTPUT_CSV_KEY]
+            logging_config[OUTPUT_CSV_KEY], using_socket
         )
         # Get some other things too: cuda information, CPU count
         # and other things that are not in the config
@@ -975,12 +976,29 @@ def redneck_logger_context(
         ]
 
         # Also report all the "fixed_params" stuff from the config
+        supported_types = [int, float, str, bool, list, tuple, dict]
+
+        def clean_list_string(lst):
+            # Convert list to string, replace commas with spaces, and then remove any double spaces
+            return ' '.join(str(lst).replace(',', ' ').split())
+
+        def flatten_config(config, parent_key='', sep='/'):
+            items = {}
+            for k, v in config.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.update(flatten_config(v, new_key, sep=sep))
+                elif isinstance(v, list):
+                    items[new_key] = clean_list_string(v)
+                else:
+                    items[new_key] = v
+            return items
+
         if "fixed_params" in config_to_log_in_wandb:
-            for key, value in config_to_log_in_wandb["fixed_params"].items():
-                # make sure it's escaped properly in case of a list or so?
-                if isinstance(value, list):
-                    value = str(value).replace(',', ' ')
-                info_to_report.append(("delta:" + str(key), value))
+            flattened = flatten_config(config_to_log_in_wandb["fixed_params"])
+            deltas_to_report =  [("delta:" + k, v) for k, v in flattened.items()]
+
+        info_to_report = info_to_report + deltas_to_report
 
         if logger.socket_client is not None:
             try_to_log_in_socket_in_batch(logger, info_to_report, sync=False)
@@ -1158,7 +1176,7 @@ def redneck_logger_context(
             log_finish_results
         )
     logger.log("Final log line for remote logs!")
-    if not logger.socket_client:
+    if logger.socket_client:
         logger.socket_client.sync_with_remote()
     else:
         try_to_sync_csv_with_remote(logger)
@@ -1398,7 +1416,7 @@ class GspreadClient:
     ):
         self.logger = logger
         self.gspread_credentials = gspread_credentials
-        self.client = self._create_client()
+        self.client : gspread.client = self._create_client()
 
         self.cache_spreadsheet = cache_spreadsheet
         self.opened_spreadsheet = None
@@ -1441,6 +1459,21 @@ class GspreadClient:
         else:
             self.opened_spreadsheet = self.client.open_by_url(spreadsheet_url)
             return self.opened_spreadsheet
+
+    @retrier_factory_with_auto_logger()
+    def get_worksheet_by_url(self, spreadsheet_url, worksheet_name):
+        opened_spreadsheet = self.get_spreadsheet_by_url(spreadsheet_url)
+
+        existing_worksheets = list(opened_spreadsheet.worksheets())
+
+        referenced_worksheet = None
+        for worksheet in existing_worksheets:
+            if worksheet.title == worksheet_name:
+                referenced_worksheet = worksheet
+        assert referenced_worksheet is not None, \
+            f"Could not find worksheet with name {worksheet_name} in spreadsheet {spreadsheet_url}"
+        return referenced_worksheet
+
 
 
     @retrier_factory_with_auto_logger()

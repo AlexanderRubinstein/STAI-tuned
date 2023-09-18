@@ -985,6 +985,8 @@ def decode_val_from_str(
 
     if isinstance(value, str):
         value = value.strip()
+    else:
+        return value
 
     if str_is_number(value):
 
@@ -995,6 +997,8 @@ def decode_val_from_str(
             and (value[0] == list_start_symbol
             or value[-1] == list_end_symbol)
     ):
+        # Parse a list. First remove repeated spaces etc
+        value = value.replace('  ', ' ').replace('[ ', '[').replace(' ]', ']')
 
         assert (
             value[0] == list_start_symbol
@@ -1043,7 +1047,8 @@ def replace_many_by_one(
 
 
 def str_is_number(input_str):
-
+    if input_str == "":
+        return False
     exponential = False
     has_floating_point = False
     for i in range(len(input_str)):

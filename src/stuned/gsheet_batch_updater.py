@@ -3,13 +3,15 @@ import datetime
 import time
 from collections import defaultdict
 
+import gspread
+
 from stuned.utility.logger import log_csv_for_concurrent, read_csv_as_dict_lock
 from stuned.utility.utils import dicts_not_equal, retrier_factory
 # from stuned.run_from_csv.__main__ import MONITOR_LAST_UPDATE_COLUMN
 
 
 class GSheetBatchUpdater:
-    def __init__(self, spreadsheet_url, worksheet_name, gsheet_client, logger, csv_path, update_interval=10):
+    def __init__(self, spreadsheet_url, worksheet_name, gsheet_client : gspread.client, logger, csv_path, update_interval=10):
         self.spreadsheet_url = spreadsheet_url
         self.worksheet_name = worksheet_name
         self.gsheet_client = gsheet_client
