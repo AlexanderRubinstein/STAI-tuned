@@ -3,7 +3,6 @@ image:
     shape: [64, 64]
     color: red
 
-
 params:
   random_seed: 42
 logging:

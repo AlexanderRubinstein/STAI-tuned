@@ -114,7 +114,6 @@ def read_yaml(yaml_file):
     with open(yaml_file, 'r') as stream:
         return yaml.safe_load(stream)
 
-
 def apply_random_seed(random_seed):
     random.seed(random_seed)
     np.random.seed(random_seed)
