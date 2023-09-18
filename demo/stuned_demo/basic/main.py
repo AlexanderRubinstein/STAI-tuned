@@ -1,7 +1,5 @@
-import os
 import random
 import sys
-from datetime import datetime
 from time import sleep
 
 import torch
