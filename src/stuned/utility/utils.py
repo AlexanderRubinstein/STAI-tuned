@@ -1,5 +1,5 @@
 import warnings
-
+import ast
 import torch
 import numpy as np
 import random
@@ -1076,6 +1076,12 @@ def str_is_number(input_str):
 
 
 def parse_float_or_int_from_string(value_as_str):
+    try: # Try to parse as float
+        return ast.literal_eval(value_as_str)
+    except Exception as e:
+        print(f"Error: {value_as_str} is not a valid float or int")
+        raise e
+        
     if FLOATING_POINT in value_as_str:
         return float(value_as_str)
     else:
