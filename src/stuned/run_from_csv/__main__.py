@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+
 import datetime
 import multiprocessing
 import os
@@ -18,12 +19,10 @@ from typing import Dict, List
 from warnings import warn
 
 import psutil
-
 from stuned.gsheet_batch_updater import GSheetBatchUpdater
 from stuned.job import Job, JobStatus, find_job_id_by_row_id, find_job_idx, get_slurm_job_status
 from stuned.job_manager import JobManager
 from stuned.utility.local_processing_utils import process_exists
-
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from stuned.utility.utils import (

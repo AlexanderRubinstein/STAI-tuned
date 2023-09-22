@@ -97,7 +97,7 @@ class JobManager():
 
                 message_length = int.from_bytes(length_data, 'big')
 
-                # Read the actual message: `socket.MSG_WAITALL` apparently works on UNIX systems only!
+                # Read the actual message: `socket.MSG_WAITALL` apparently works only on UNIX systems!
                 data = client.recv(message_length, socket.MSG_WAITALL)
                 if not data:
                     self.logger.log('Warning: Connection closed by client')
