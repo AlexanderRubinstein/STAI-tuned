@@ -23,6 +23,7 @@ from stuned.gsheet_batch_updater import GSheetBatchUpdater
 from stuned.job import Job, JobStatus, find_job_id_by_row_id, find_job_idx, get_slurm_job_status
 from stuned.job_manager import JobManager
 from stuned.utility.local_processing_utils import process_exists
+
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from stuned.utility.utils import (
@@ -39,13 +40,16 @@ from stuned.utility.utils import (
     check_duplicates,
     expand_csv,
     retrier_factory,
-    is_number
+    is_number,
 )
-from stuned.utility.configs import (
-    make_csv_config
+from stuned.utility.configs import make_csv_config
+from stuned.utility.constants import (
+    AUTOGEN_PREFIX,
+    NESTED_CONFIG_KEY_SEPARATOR,
+    STATUS_CSV_COLUMN,
+    SUBMITTED_STATUS,
+    WHETHER_TO_RUN_COLUMN,
 )
-from stuned.utility.constants import AUTOGEN_PREFIX, NESTED_CONFIG_KEY_SEPARATOR, STATUS_CSV_COLUMN, SUBMITTED_STATUS, \
-    WHETHER_TO_RUN_COLUMN
 from stuned.utility.logger import (
     DELTA_PREFIX,
     SLURM_PREFIX,
@@ -57,8 +61,11 @@ from stuned.utility.logger import (
     log_csv_for_concurrent,
     fetch_csv,
     try_to_upload_csv,
-    make_delta_column_name, HTTP_PREFIX, GspreadClient
+    make_delta_column_name,
+    HTTP_PREFIX,
+    GspreadClient,
 )
+
 # Arnas' changes
 DELTA_AFFECTS_ONLY_FIXED_PARAMS = True
 EMPTY_VALUE_MEANS_NO_CHANGE = True
@@ -81,7 +88,7 @@ DEFAULT_SLURM_ARGS_DICT = {
     "ntasks": 1,
     "cpus-per-task": 2,
     "error": DEV_NULL,
-    "output": DEV_NULL
+    "output": DEV_NULL,
 }
 EMPTY_STRING = "EMPTY_STRING"
 EXPANDED_CSV_PREFIX = "expanded_"
@@ -99,61 +106,49 @@ MONITOR_LAST_UPDATE_COLUMN = "last_update_monitor"
 # if use_shared_memory:
 #     pass
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Train and/or validate models."
-    )
-    parser.add_argument(
-        "--csv_path",
-        type=str,
-        required=True,
-        help="path to csv file"
-    )
+    parser = argparse.ArgumentParser(description="Train and/or validate models.")
+    parser.add_argument("--csv_path", type=str, required=True, help="path to csv file")
     parser.add_argument(
         "--conda_env",
         type=str,
         required=False,
         default=DEFAULT_ENV_NAME,
-        help="conda environment name"
+        help="conda environment name",
     )
     parser.add_argument(
-        "--run_locally",
-        action="store_true",
-        help="whether to run this script locally"
+        "--run_locally", action="store_true", help="whether to run this script locally"
     )
     parser.add_argument(
         "--log_file_path",
         type=str,
         required=False,
         default=get_default_log_file_path(),
-        help="default path for the log file"
+        help="default path for the log file",
     )
     parser.add_argument(
         "--expand",
         action="store_true",
-        help="whether to first expand input csv by cartesian product of options"
+        help="whether to first expand input csv by cartesian product of options",
     )
 
     parser.add_argument(
         "--use_socket",
         action="store_true",
-        help="whether to use a socket for communication with the server"
+        help="whether to use a socket for communication with the server",
     )
 
     parser.add_argument(
         "--disable_local_loging",
         action="store_true",
-        help="whether to disable logging to wandb and g drive for local runs"
+        help="whether to disable logging to wandb and g drive for local runs",
     )
     return parser.parse_args()
 
 
 def get_default_log_file_path():
-    return os.path.join(
-        get_project_root_path(),
-        "tmp",
-        "tmp_log_for_run_from_csv.out"
-    )
+    return os.path.join(get_project_root_path(), "tmp", "tmp_log_for_run_from_csv.out")
 
 
 #
@@ -262,10 +257,11 @@ def get_default_log_file_path():
 #                     gspread_client
 #                 )
 
+
 def get_all_slurm_jobs():
     try:
-        output = subprocess.check_output(['squeue', '--me'], universal_newlines=True, timeout=60)
-        lines = output.strip().split('\n')[1:]  # Skip the header
+        output = subprocess.check_output(["squeue", "--me"], universal_newlines=True, timeout=60)
+        lines = output.strip().split("\n")[1:]  # Skip the header
         jobs = {}
         for line in lines:
             parts = line.split()
@@ -277,6 +273,8 @@ def get_all_slurm_jobs():
         return {}
     except subprocess.TimeoutExpired:
         return None
+
+
 def get_pid_job_stats(jobs_ids, logger):
     job_stats_pid = {}
     for job_id in jobs_ids:
@@ -284,21 +282,16 @@ def get_pid_job_stats(jobs_ids, logger):
         if process_exists(job_id):
             job_stats_pid[job_id] = JobStatus.RUNNING
         else:
-            job_stats_pid[job_id] = JobStatus.FAILED # I guess?
+            job_stats_pid[job_id] = JobStatus.FAILED  # I guess?
     return job_stats_pid
 
 
 def get_slurm_jobs_stats(jobs_ids, logger):
     # Convert the list of job IDs to a comma-separated string
-    job_ids_str = ','.join(map(str, jobs_ids))
+    job_ids_str = ",".join(map(str, jobs_ids))
 
     # Define the sacct command with the desired format
-    cmd = [
-        'sacct',
-        '-j', job_ids_str,
-        '--format=JobID,State,ExitCode',
-        '--noheader'
-    ]
+    cmd = ["sacct", "-j", job_ids_str, "--format=JobID,State,ExitCode", "--noheader"]
 
     # Execute the command and capture the output
     try:
@@ -307,21 +300,21 @@ def get_slurm_jobs_stats(jobs_ids, logger):
         logger.log("Warning: sacct command timed out! Will repeat after sleeping")
         return None
     # Split the output into lines and then into columns
-    lines = result.stdout.strip().split('\n')
+    lines = result.stdout.strip().split("\n")
     job_stats = {}
     for line in lines:
         columns = line.split()
         # Check if the line contains the main job info (not the steps)
-        if len(columns) == 3 and '+' not in columns[0]:
+        if len(columns) == 3 and "+" not in columns[0]:
             job_id, state, exit_code = columns
-            job_stats[int(job_id)] = {
-                'State': state,
-                'ExitCode': exit_code
-            }
+            job_stats[int(job_id)] = {"State": state, "ExitCode": exit_code}
 
     return job_stats
 
-def update_job_statuses_in_place(job_manager : JobManager, shared_jobs_copy : Dict, logger, local_run=False) -> bool:
+
+def update_job_statuses_in_place(
+    job_manager: JobManager, shared_jobs_copy: Dict, logger, local_run=False
+) -> bool:
     # Check SLURM cluster for running jobs and their status
     ref_key_job_id = "main_pid" if local_run else "job_id"
     job_ids = [job[ref_key_job_id] for job in shared_jobs_copy.values()]
@@ -353,11 +346,16 @@ def update_job_statuses_in_place(job_manager : JobManager, shared_jobs_copy : Di
         else:
             job_status = job["status"] if "status" in job else None
             exit_code = job["exit_code"] if "exit_code" in job else None
-            
+
         job_from_local_idx = find_job_idx(job_manager.jobs, job[ref_key_job_id])
         if job_from_local_idx is None:
             # Add a job to the list and mark as update
-            job_to_add = Job(job_id = job[ref_key_job_id], job_status = job_status, job_exit_code = exit_code, csv_row_id = row_id)
+            job_to_add = Job(
+                job_id=job[ref_key_job_id],
+                job_status=job_status,
+                job_exit_code=exit_code,
+                csv_row_id=row_id,
+            )
             job_to_add.updated = True
             job_manager.jobs.append(job_to_add)
             # updated_rows.append(row_id)
@@ -374,8 +372,21 @@ def update_job_statuses_in_place(job_manager : JobManager, shared_jobs_copy : Di
             job_manager.jobs[job_from_local_idx] = job_from_local
     return True
 
-def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict, run_locally: bool, logger, spreadsheet_url, worksheet_name: str,
-                       shared_row_numbers, csv_path, gsheet_client: GspreadClient, lock_manager, n_jobs_total):
+
+def monitor_jobs_async(
+    job_manager: JobManager,
+    async_results,
+    shared_jobs_dict,
+    run_locally: bool,
+    logger,
+    spreadsheet_url,
+    worksheet_name: str,
+    shared_row_numbers,
+    csv_path,
+    gsheet_client: GspreadClient,
+    lock_manager,
+    n_jobs_total,
+):
     # Prepare google client for writing the updates. The mechanism of writing the updates here is different
     # from the individual jobs. Here we write the updates "globally" to the worksheet as opposed to a local csv file.
     # spreadsheet_from_url = logger.get_spreadsheet_by_url(get_spreadsheet_by_urll)
@@ -400,20 +411,50 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
         assert run_locally, "If not running locally, a csv file must be provided."
         warn("No csv file provided, skipping writing to a csv file.")
     else:
-        gsheet_updater = GSheetBatchUpdater(spreadsheet_url, worksheet_name, gsheet_client, logger, csv_path)
+        gsheet_updater = GSheetBatchUpdater(
+            spreadsheet_url, worksheet_name, gsheet_client, logger, csv_path
+        )
+        # get cols from gsheet_client using the `worksheet_name`
+        worksheet = gsheet_client.opened_spreadsheet.worksheet(worksheet_name)
+        # Get the first row (headers)
+        headers_org = worksheet.row_values(1)
 
         # Prepare the updates
-        "status	walltime	starttime	endtime	WandB url	stdout	stderr"
+        # "status	walltime	starttime	endtime	WandB url	stdout	stderr"
         # TODO: make this more robust
-        reset_columns = ["status", "walltime", "starttime", "endtime", "WandB url", "stdout", "stderr", "slurm_job_id_monitor",
-                         "gpu_info", "cpu_count", "exit_code_monitor", "last_update_monitor"]
+        # columns not_reset
+        cols_not_reset = ["path_to_main", "path_to_default_config", "custom_run_cmd"]
+
+        # also exclude slurm and delta columns
+        cols_not_reset += [
+            col
+            for col in headers_org
+            if col.startswith(SLURM_PREFIX) or col.startswith(DELTA_PREFIX)
+        ]
+
+        headers_reset = [col for col in headers_org if col not in cols_not_reset]
+
+        # reset_columns = [
+        #     "status",
+        #     "walltime",
+        #     "starttime",
+        #     "endtime",
+        #     "WandB url",
+        #     "stdout",
+        #     "stderr",
+        #     "slurm_job_id_monitor",
+        #     "gpu_info",
+        #     "cpu_count",
+        #     "exit_code_monitor",
+        #     "last_update_monitor",
+        # ]
         column_value_pairs = [
-            (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+            -(MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
         ]
-        for column_name in reset_columns:
+        for column_name in headers_reset:
             column_value_pairs.append((column_name, ""))
-        
+
         # Add updates to the queue
         for row_id_share in shared_row_numbers_lst:
             for key, val in column_value_pairs:
@@ -433,17 +474,20 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
     max_sleep_duration = 3  # Maximum sleep duration
 
     # local_jobs_dict = {}
-    
+
     last_full_check_time = time.time()
     check_for_full_updates_every = 60
-    
+
     while not should_exit:
         with lock_manager:
             shared_jobs_copy = dict(shared_jobs_dict)
         with job_manager.manager_lock:
-            ''' TODO: this can introduce some clashes between status changes; `sacct` should only be used in
-                case the job isn't reachable. Otherwise the stauts should be updated from the job itself. '''
-            jobs_update_status = update_job_statuses_in_place(job_manager, shared_jobs_copy, logger, run_locally)
+            """TODO: this can introduce some clashes between status changes; `sacct` should only be used in
+            case the job isn't reachable. Otherwise the stauts should be updated from the job itself.
+            """
+            jobs_update_status = update_job_statuses_in_place(
+                job_manager, shared_jobs_copy, logger, run_locally
+            )
 
             if not jobs_update_status:
                 logger.log("Warning: sacct command timed out! Will repeat after sleeping")
@@ -458,22 +502,34 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
         # running = sum(1 for job in jobs_to_monitor if job.job_status == "Running")
         running = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.RUNNING)
         # finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
-        finished_successfully = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.COMPLETED)
-        failed = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.FAILED or job.job_status == JobStatus.CANCELLED or job.job_status == JobStatus.TIMEOUT)
+        finished_successfully = sum(
+            1 for job in job_manager.jobs if job.job_status == JobStatus.COMPLETED
+        )
+        failed = sum(
+            1
+            for job in job_manager.jobs
+            if job.job_status == JobStatus.FAILED
+            or job.job_status == JobStatus.CANCELLED
+            or job.job_status == JobStatus.TIMEOUT
+        )
 
         # Display progress and status
-        last_update_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        status_msg = (f"Jobs Progress | Submitted: {submitted} / {total_jobs} | "
-                      f"Running: {running} / {total_jobs} | "
-                      f"Finished: {finished_successfully} / {total_jobs} | "
-                      f"Failed: {failed} | Last Update: {last_update_time}")
+        last_update_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status_msg = (
+            f"Jobs Progress | Submitted: {submitted} / {total_jobs} | "
+            f"Running: {running} / {total_jobs} | "
+            f"Finished: {finished_successfully} / {total_jobs} | "
+            f"Failed: {failed} | Last Update: {last_update_time}"
+        )
         logger.log(status_msg, carriage_return=True)
 
         # Periodically report back to Gsheets to indicate the status of the jobs.
         if gsheet_updater is not None:
             gsheet_updater.batch_update()
-            
-            if not job_manager.open_socket and (time.time() - last_full_check_time > check_for_full_updates_every):
+
+            if not job_manager.open_socket and (
+                time.time() - last_full_check_time > check_for_full_updates_every
+            ):
                 gsheet_updater.update_remote_if_changes_happened()
 
         time.sleep(current_sleep_duration)
@@ -486,7 +542,13 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
             break
 
     if should_exit:
-        running_job_ids = [job.job_id for job in job_manager.jobs if job.job_status in JobStatus.PENDING or job.job_status in JobStatus.RUNNING or (job.job_status is not None and job.job_status.startswith(JobStatus.UNKNOWN + "_"))]
+        running_job_ids = [
+            job.job_id
+            for job in job_manager.jobs
+            if job.job_status in JobStatus.PENDING
+            or job.job_status in JobStatus.RUNNING
+            or (job.job_status is not None and job.job_status.startswith(JobStatus.UNKNOWN + "_"))
+        ]
         logger.log(f"Number of jobs that were running: {len(running_job_ids)}")
         exited_jobs = 0
         # Use scancel to send a termination request to these jobs
@@ -498,7 +560,7 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
                 else:
                     exited_jobs += 1
             else:
-                subprocess.run(['scancel', str(job_id)])
+                subprocess.run(["scancel", str(job_id)])
 
         grace_period = 300
         # TODO: update these things in the manager itself, not outside it
@@ -515,7 +577,8 @@ def monitor_jobs_async(job_manager : JobManager, async_results, shared_jobs_dict
                     still_running += 1
 
             logger.log(
-                f"{second}/{grace_period} seconds trying, {len(running_job_ids) - still_running}/{len(running_job_ids)} jobs exited")
+                f"{second}/{grace_period} seconds trying, {len(running_job_ids) - still_running}/{len(running_job_ids)} jobs exited"
+            )
 
             # Break the loop if all jobs have exited
             if still_running == 0:
@@ -565,11 +628,15 @@ def dump_into_gsheet_queue(gsheet_updater, job_manager):
     for idx, job in enumerate(job_manager.jobs):
         if job.updated:
             gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_STATUS_COLUMN, job.job_status)
-            gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_LAST_UPDATE_COLUMN,
-                                        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            gsheet_updater.add_to_queue(
+                job.csv_row_id,
+                MONITOR_LAST_UPDATE_COLUMN,
+                datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
             if job.job_exit_code is not None:
-                gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_EXIT_CODE_COLUMN,
-                                            f"{job.job_exit_code}")
+                gsheet_updater.add_to_queue(
+                    job.csv_row_id, MONITOR_EXIT_CODE_COLUMN, f"{job.job_exit_code}"
+                )
             if job.job_id is not None:
                 gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_JOB_ID_COLUMN, f"{job.job_id}")
 
@@ -990,9 +1057,11 @@ def dump_into_gsheet_queue(gsheet_updater, job_manager):
 #
 #         time.sleep(4)  # Check every 30 seconds
 
-def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX, HTTP_PREFIX)):
+
+def main_with_monitoring(
+    make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX, HTTP_PREFIX)
+):
     # Define a flag to check if we should exit
-        
 
     if make_final_cmd is None:
         make_final_cmd = make_final_cmd_slurm
@@ -1001,21 +1070,27 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
 
     use_socket = args.use_socket if args.use_socket is not None else False
     # TODO: give a more descriptive and accurate name
-    disable_local_loging = args.disable_local_loging if args.disable_local_loging is not None else False
+    disable_local_loging = (
+        args.disable_local_loging if args.disable_local_loging is not None else False
+    )
 
     logger = make_logger()
 
     if use_socket:
         logger.log("User requested to use socket.")
 
-    job_manager = JobManager(local_run = args.run_locally if args.run_locally is not None else False, open_socket = use_socket, logger=logger)
-    
+    job_manager = JobManager(
+        local_run=args.run_locally if args.run_locally is not None else False,
+        open_socket=use_socket,
+        logger=logger,
+    )
+
     # if OPEN_SOCKET:
     #     loop = asyncio.get_event_loop()
     #     loop.create_task(job_manager.start_server())
     #     loop.create_task(job_manager.process_messages())
     #     loop.run_forever()
-    
+
     # Make sure server ip and port are set
     if job_manager.open_socket:
         logger.log("Trying to get server ip and port")
@@ -1025,10 +1100,7 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
     csv_path_or_url = args.csv_path
 
     logger.log(f"Fetching csv from: {csv_path_or_url}")
-    csv_path, spreadsheet_url, worksheet_name, gspread_client = fetch_csv(
-        csv_path_or_url,
-        logger
-    )
+    csv_path, spreadsheet_url, worksheet_name, gspread_client = fetch_csv(csv_path_or_url, logger)
 
     if args.expand:
         expand_gsheet(csv_path, spreadsheet_url, worksheet_name, gspread_client)
@@ -1036,7 +1108,6 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
     inputs_csv = read_csv_as_dict(csv_path)
 
     with mp.Manager() as shared_memory_manager:
-
         lock = shared_memory_manager.Lock()
         current_step = shared_memory_manager.Value("int", 0)
         shared_rows_to_run = shared_memory_manager.list()
@@ -1067,13 +1138,12 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                 len(inputs_csv),
                 job_manager.server_ip,
                 job_manager.server_port,
-                disable_local_loging
+                disable_local_loging,
             )
             for row_number, csv_row in inputs_csv.items()
         ]
 
         if len(starmap_args_for_row_processing):
-
             # first_csv_row = starmap_args_for_row_processing[0][1]
             # check_csv_column_names(first_csv_row, allowed_prefixes)
 
@@ -1082,22 +1152,14 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
             upload_csv = False
 
             with mp.Pool(pool_size) as pool:
-
-                pool.starmap(
-                    process_csv_row,
-                    starmap_args_for_row_processing
-                )
+                pool.starmap(process_csv_row, starmap_args_for_row_processing)
 
                 if len(shared_rows_to_run):
-
                     assert 2 * len(shared_rows_to_run) == len(shared_csv_updates)
 
                     concurrent_log_func = retrier_factory()(log_csv_for_concurrent)
 
-                    concurrent_log_func(
-                        csv_path,
-                        shared_csv_updates
-                    )
+                    concurrent_log_func(csv_path, shared_csv_updates)
 
                     os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
 
@@ -1109,7 +1171,7 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
                             shared_jobs_dict,
                             row_id,
                             lock,
-                            logger
+                            logger,
                         )
                         for run_cmd, row_id in zip(shared_rows_to_run, shared_row_numbers)
                     ]
@@ -1128,9 +1190,20 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
 
                     upload_csv = True
 
-                    monitor_jobs_async(job_manager, async_results, shared_jobs_dict, args.run_locally, logger, spreadsheet_url,
-                                       worksheet_name, shared_row_numbers, csv_path, gspread_client, lock,
-                                       len(starmap_args_for_job_submitting))
+                    monitor_jobs_async(
+                        job_manager,
+                        async_results,
+                        shared_jobs_dict,
+                        args.run_locally,
+                        logger,
+                        spreadsheet_url,
+                        worksheet_name,
+                        shared_row_numbers,
+                        csv_path,
+                        gspread_client,
+                        lock,
+                        len(starmap_args_for_job_submitting),
+                    )
             # Print all IDs
             # logger.log(f"Len of spawned jobs: {len(shared_job_objs)}")
 
@@ -1153,18 +1226,12 @@ def main_with_monitoring(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DE
 
 
 def get_pool_size(iterable_len):
-    return min(
-        min(
-            max(1, mp.cpu_count() - 1),
-            iterable_len
-        ),
-        MAX_PROCESSES
-    )
+    return min(min(max(1, mp.cpu_count() - 1), iterable_len), MAX_PROCESSES)
 
 
 # TODO: move these into the main function
-run_jobs_flag = mp.Value('i', 1)  # 1 means jobs should run, 0 means they shouldn't
-submitted_jobs = mp.Value('i', 0)
+run_jobs_flag = mp.Value("i", 1)  # 1 means jobs should run, 0 means they shouldn't
+submitted_jobs = mp.Value("i", 0)
 submitted_jobs_lock = mp.Lock()
 
 
@@ -1188,7 +1255,7 @@ def update_job_status(process, shared_jobs_dict, row_id, lock_manager, cancelled
 def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lock_manager, logger):
     """
 
-        row_id is used for identifying the job in the spreadsheet and for updating the status of the job in the shared memory.
+    row_id is used for identifying the job in the spreadsheet and for updating the status of the job in the shared memory.
 
     """
 
@@ -1196,13 +1263,14 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
         return "Job Stopped"
 
     def signal_handler(sig, frame):
-        logger.log('KeyboardInterrupt caught, but continuing...')
+        logger.log("KeyboardInterrupt caught, but continuing...")
 
     # Register the signal handler
     signal.signal(signal.SIGINT, signal_handler)
 
-    with open(log_file_path, 'w+') as log_file:
+    with open(log_file_path, "w+") as log_file:
         if run_locally:
+
             def get_main_and_child_pids(pid):
                 main_pid = pid
                 child_pids = [child.pid for child in psutil.Process(main_pid).children()]
@@ -1217,10 +1285,7 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
             main_pid, child_pids = get_main_and_child_pids(process.pid)
             try:
                 with lock_manager:
-                    shared_jobs_dict[row_id] = {
-                        "main_pid": main_pid,
-                        "status": JobStatus.RUNNING
-                    }
+                    shared_jobs_dict[row_id] = {"main_pid": main_pid, "status": JobStatus.RUNNING}
             except Exception as e:
                 pass
             # Periodically check if the process is still running
@@ -1239,7 +1304,9 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
                         process.terminate()
 
                     # Update the job status after forcefully terminating
-                    update_job_status(process, shared_jobs_dict, row_id, lock_manager, cancelled=True)
+                    update_job_status(
+                        process, shared_jobs_dict, row_id, lock_manager, cancelled=True
+                    )
                     return 1
                     # return 404
 
@@ -1261,10 +1328,11 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
             timeout_duration = 60
 
             try:
-                output = subprocess.check_output(run_cmd, stderr=subprocess.STDOUT, shell=True,
-                                                 timeout=timeout_duration).decode('utf-8')
+                output = subprocess.check_output(
+                    run_cmd, stderr=subprocess.STDOUT, shell=True, timeout=timeout_duration
+                ).decode("utf-8")
                 numbers = re.findall(r"\d+", output)
-                job_id = int(''.join(numbers))
+                job_id = int("".join(numbers))
 
                 if job_id:
                     logger.log(f"Submitted a job with ID: {job_id}")
@@ -1291,44 +1359,28 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
 
 def expand_gsheet(csv_path, spreadsheet_url, worksheet_name, gspread_client):
     expanded_csv_path = os.path.join(
-        os.path.dirname(csv_path),
-        EXPANDED_CSV_PREFIX + os.path.basename(csv_path)
+        os.path.dirname(csv_path), EXPANDED_CSV_PREFIX + os.path.basename(csv_path)
     )
-    expand_csv(
-        csv_path,
-        expanded_csv_path
-    )
+    expand_csv(csv_path, expanded_csv_path)
     csv_path = expanded_csv_path
     if worksheet_name is not None:
         worksheet_name = EXPANDED_CSV_PREFIX + worksheet_name
 
-    try_to_upload_csv(
-        csv_path,
-        spreadsheet_url,
-        worksheet_name,
-        gspread_client
-    )
+    try_to_upload_csv(csv_path, spreadsheet_url, worksheet_name, gspread_client)
 
 
 def fetch_default_config_path(path, logger):
     if FILES_URL in path:
-
         gdrive_client = make_gdrive_client(logger)
-        with (
-            NamedTemporaryFile('w+t', delete=False) as tmp_file
-        ):
+        with NamedTemporaryFile("w+t", delete=False) as tmp_file:
             remote_file = sync_local_file_with_gdrive(
-                gdrive_client,
-                tmp_file.name,
-                path,
-                download=True,
-                logger=logger
+                gdrive_client, tmp_file.name, path, download=True, logger=logger
             )
 
             file_path = os.path.join(
                 get_default_configs_folder(),
-                remote_file["title"].split('.')[0],
-                f"default_config.yaml"
+                remote_file["title"].split(".")[0],
+                f"default_config.yaml",
             )
 
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -1341,64 +1393,55 @@ def fetch_default_config_path(path, logger):
 
 
 def get_default_configs_folder():
-    return os.path.join(
-        get_project_root_path(),
-        "experiment_configs"
-    )
+    return os.path.join(get_project_root_path(), "experiment_configs")
 
 
 def process_csv_row(
-        make_final_cmd,
-        csv_row,
-        row_number,
-        input_csv_path,
-        conda_env,
-        run_locally,
-        log_file_path,
-        spreadsheet_url,
-        worksheet_name,
-        logger,
-        lock,
-        shared_rows_to_run,
-        shared_default_config_paths,
-        shared_csv_updates,
-        shared_row_numbers,
-        current_step,
-        total_rows,
-        server_ip,
-        server_port,
-        disable_local_loging
+    make_final_cmd,
+    csv_row,
+    row_number,
+    input_csv_path,
+    conda_env,
+    run_locally,
+    log_file_path,
+    spreadsheet_url,
+    worksheet_name,
+    logger,
+    lock,
+    shared_rows_to_run,
+    shared_default_config_paths,
+    shared_csv_updates,
+    shared_row_numbers,
+    current_step,
+    total_rows,
+    server_ip,
+    server_port,
+    disable_local_loging,
 ):
     assert not spreadsheet_url or worksheet_name is not None, (
         "`worksheet_name` is None but this is not allowed when remote sheet is used;"
-        "Make sure to pass the worksheet name using the `::` syntax in the --csv_path argument.")
+        "Make sure to pass the worksheet name using the `::` syntax in the --csv_path argument."
+    )
 
     final_cmd = None
 
     whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
 
-    if (
-            whether_to_run.isnumeric()
-            and int(whether_to_run) != 0
-    ):
-
+    if whether_to_run.isnumeric() and int(whether_to_run) != 0:
         replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
         replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
 
         default_config_path_or_url = csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN]
         if not default_config_path_or_url in shared_default_config_paths:
             with lock:
-                default_config_path = fetch_default_config_path(
-                    default_config_path_or_url,
-                    logger
-                )
-                shared_default_config_paths[default_config_path_or_url] \
-                    = default_config_path
+                default_config_path = fetch_default_config_path(default_config_path_or_url, logger)
+                shared_default_config_paths[default_config_path_or_url] = default_config_path
         else:
-            default_config_path \
-                = shared_default_config_paths[default_config_path_or_url]
+            default_config_path = shared_default_config_paths[default_config_path_or_url]
 
-        assert os.path.exists(default_config_path), f"Default config path at {default_config_path} does not exist."
+        assert os.path.exists(
+            default_config_path
+        ), f"Default config path at {default_config_path} does not exist."
 
         exp_dir = normalize_path(os.path.dirname(default_config_path))
         exp_name = os.path.basename(exp_dir)
@@ -1420,14 +1463,14 @@ def process_csv_row(
             worksheet_name,
             server_ip,
             server_port,
-            run_locally
+            run_locally,
         )
 
         cmd_as_string = make_task_cmd(
             new_config_path,
             conda_env,
             normalize_path(csv_row[MAIN_PATH_COLUMN]),
-            csv_row  # pass the row since might need to overwrite running command
+            csv_row,  # pass the row since might need to overwrite running command
         )
 
         log_folder = os.path.dirname(log_file_path)
@@ -1435,16 +1478,11 @@ def process_csv_row(
             with lock:
                 os.makedirs(log_folder, exist_ok=True)
 
-        if run_locally:     
+        if run_locally:
             # final_cmd = "{} &> {}".format(cmd_as_string, log_file_path)
             final_cmd = "{}".format(cmd_as_string)
         else:
-            final_cmd = make_final_cmd(
-                csv_row,
-                exp_name,
-                log_file_path,
-                cmd_as_string
-            )
+            final_cmd = make_final_cmd(csv_row, exp_name, log_file_path, cmd_as_string)
 
     if final_cmd is not None:
         shared_csv_updates.append((row_number, STATUS_CSV_COLUMN, SUBMITTED_STATUS))
@@ -1454,33 +1492,18 @@ def process_csv_row(
 
     with lock:
         current_step.value += 1
-        logger.progress(
-            "Rows processing.",
-            current_step.value,
-            total_rows
-        )
+        logger.progress("Rows processing.", current_step.value, total_rows)
 
 
 def make_final_cmd_slurm(csv_row, exp_name, log_file_path, cmd_as_string):
-    slurm_args_dict = make_slurm_args_dict(
-        csv_row,
-        exp_name,
-        log_file_path
-    )
+    slurm_args_dict = make_slurm_args_dict(csv_row, exp_name, log_file_path)
     if USE_SRUN:
         slurm_args_as_string = " ".join(
-            [
-                f"--{flag}={value}"
-                for flag, value
-                in slurm_args_dict.items()
-            ]
+            [f"--{flag}={value}" for flag, value in slurm_args_dict.items()]
         )
-        final_cmd = "srun {} sh -c \"{}\" &".format(
-            slurm_args_as_string,
-            cmd_as_string
-        )
+        final_cmd = 'srun {} sh -c "{}" &'.format(slurm_args_as_string, cmd_as_string)
     else:
-        with (NamedTemporaryFile('w', delete=False)) as tmp_file:
+        with NamedTemporaryFile("w", delete=False) as tmp_file:
             fill_sbatch_script(tmp_file, slurm_args_dict, cmd_as_string)
             final_cmd = "sbatch {}".format(tmp_file.name)
 
@@ -1495,13 +1518,13 @@ def check_csv_column_names(csv_row, allowed_prefixes):
     assert PATH_TO_DEFAULT_CONFIG_COLUMN in csv_row
 
     for i, key in enumerate(csv_row.keys()):
-        assert key is not None, \
-            f"Column {i} has empty column name. " \
-            f"Or some table entries contain commas."
+        assert key is not None, (
+            f"Column {i} has empty column name. " f"Or some table entries contain commas."
+        )
         if PREFIX_SEPARATOR in key:
-            assert any([prefix in key for prefix in allowed_prefixes]), \
-                f"\"{key}\" does not contain any of allowed prefixes " \
-                f"from:\n{allowed_prefixes}\n"
+            assert any([prefix in key for prefix in allowed_prefixes]), (
+                f'"{key}" does not contain any of allowed prefixes ' f"from:\n{allowed_prefixes}\n"
+            )
 
 
 def fill_sbatch_script(sbatch_file, slurm_args_dict, command):
@@ -1515,38 +1538,36 @@ def fill_sbatch_script(sbatch_file, slurm_args_dict, command):
 
 
 def make_new_config(
-        csv_row,
-        row_number,
-        input_csv_path,
-        default_config,
-        exp_dir,
-        spreadsheet_url,
-        worksheet_name,
-        server_ip,
-        server_port,
-        run_locally
+    csv_row,
+    row_number,
+    input_csv_path,
+    default_config,
+    exp_dir,
+    spreadsheet_url,
+    worksheet_name,
+    server_ip,
+    server_port,
+    run_locally,
 ):
     """
     Assume that `fixed_params` are the ones being passed to the jobs. We will move them to the config file
     but will update them according to the `deltas` in the config file.
     """
     deltas = extract_from_csv_row_by_prefix(
-        csv_row,
-        DELTA_PREFIX + PREFIX_SEPARATOR,
-        ignore_values=PLACEHOLDERS_FOR_DEFAULT
+        csv_row, DELTA_PREFIX + PREFIX_SEPARATOR, ignore_values=PLACEHOLDERS_FOR_DEFAULT
     )
 
     if DELTA_AFFECTS_ONLY_FIXED_PARAMS:
-        """ Make changes only in the 'fixed_params' subdict of the config """
-        assert "fixed_params" in default_config, \
-            "If DELTA_AFFECTS_ONLY_FIXED_PARAMS is True, then 'fixed_params' must be in default_config."
+        """Make changes only in the 'fixed_params' subdict of the config"""
+        assert (
+            "fixed_params" in default_config
+        ), "If DELTA_AFFECTS_ONLY_FIXED_PARAMS is True, then 'fixed_params' must be in default_config."
         for key in list(deltas.keys()):
             deltas["fixed_params" + NESTED_CONFIG_KEY_SEPARATOR + key] = deltas[key]
             del deltas[key]
 
     if len(deltas) > 0:
         check_duplicates(list(deltas.keys()))
-
 
     deltas_del = []
     for key in deltas.keys():
@@ -1564,24 +1585,18 @@ def make_new_config(
         del deltas[key]
 
     decode_strings_in_dict(
-        deltas,
-        list_separators=[' '],
-        list_start_symbol='[',
-        list_end_symbol=']'
+        deltas, list_separators=[" "], list_start_symbol="[", list_end_symbol="]"
     )
 
     deltas[f"logging{NESTED_CONFIG_KEY_SEPARATOR}output_csv"] = make_csv_config(
-        input_csv_path,
-        row_number,
-        spreadsheet_url,
-        worksheet_name
+        input_csv_path, row_number, spreadsheet_url, worksheet_name
     )
-    
+
     deltas[f"logging{NESTED_CONFIG_KEY_SEPARATOR}server_ip"] = server_ip
     deltas[f"logging{NESTED_CONFIG_KEY_SEPARATOR}server_port"] = server_port
 
     deltas["run_locally"] = run_locally
-        
+
     new_config = make_config_from_default_and_deltas(default_config, deltas)
     # make sure we preserve deltas though
     for delta in deltas:
@@ -1595,15 +1610,10 @@ def make_new_config(
             new_config[key] = value
 
     new_config_path = os.path.join(
-        exp_dir,
-        AUTOGEN_PREFIX,
-        make_autogenerated_config_name(input_csv_path, row_number)
+        exp_dir, AUTOGEN_PREFIX, make_autogenerated_config_name(input_csv_path, row_number)
     )
     os.makedirs(os.path.dirname(new_config_path), exist_ok=True)
-    save_as_yaml(
-        new_config_path,
-        new_config
-    )
+    save_as_yaml(new_config_path, new_config)
     return new_config, new_config_path
 
 
@@ -1621,10 +1631,7 @@ def make_task_cmd(new_config_path, conda_env, exec_path, csv_row):
         cmd = "{} {} {}".format(csv_row["custom_run_cmd"], exec_path, exec_args)
     else:
         cmd = "{} {} && python {} {}".format(
-            NEW_SHELL_INIT_COMMAND,
-            conda_env,
-            exec_path,
-            exec_args
+            NEW_SHELL_INIT_COMMAND, conda_env, exec_path, exec_args
         )
     return cmd
 
@@ -1638,9 +1645,7 @@ def make_slurm_args_dict(csv_row, exp_name, log_file):
     all_slurm_args_dict["error"] = log_file
 
     specified_slurm_args = extract_from_csv_row_by_prefix(
-        csv_row,
-        SLURM_PREFIX + PREFIX_SEPARATOR,
-        ignore_values=PLACEHOLDERS_FOR_DEFAULT
+        csv_row, SLURM_PREFIX + PREFIX_SEPARATOR, ignore_values=PLACEHOLDERS_FOR_DEFAULT
     )
 
     all_slurm_args_dict |= specified_slurm_args
@@ -1658,16 +1663,9 @@ def extract_from_csv_row_by_prefix(csv_row, prefix, ignore_values):
         assert key is not None, "Possibly inconsistent number of delimeters."
         if key == prefix:
             raise Exception(
-                f"Found \"{prefix}\" (nothing after this prefix) "
-                f"in csv_row:\n{csv_row}"
+                f'Found "{prefix}" (nothing after this prefix) ' f"in csv_row:\n{csv_row}"
             )
-        if (
-                len(key) > prefix_len
-                and
-                prefix == key[:prefix_len]
-                and
-                not value in ignore_values
-        ):
+        if len(key) > prefix_len and prefix == key[:prefix_len] and not value in ignore_values:
             result[key[prefix_len:]] = value
 
     return result
@@ -1681,7 +1679,7 @@ def make_config_from_default_and_deltas(default_config, deltas):
             new_config,
             nested_config_key.split(NESTED_CONFIG_KEY_SEPARATOR),
             new_value,
-            to_create_new_elements=True
+            to_create_new_elements=True,
         )
     return new_config
 
