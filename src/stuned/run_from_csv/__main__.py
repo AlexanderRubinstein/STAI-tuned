@@ -449,7 +449,7 @@ def monitor_jobs_async(
         #     "last_update_monitor",
         # ]
         column_value_pairs = [
-            -(MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+            (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
             (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
         ]
         for column_name in headers_reset:
@@ -1660,7 +1660,9 @@ def extract_from_csv_row_by_prefix(csv_row, prefix, ignore_values):
     prefix_len = len(prefix)
     result = {}
     for key, value in csv_row.items():
-        assert key is not None, f"Possibly inconsistent number of delimeters. Found key={key} in csv_row={csv_row} with value={value}"
+        assert (
+            key is not None
+        ), f"Possibly inconsistent number of delimeters. Found key={key} in csv_row={csv_row} with value={value}"
         if key == prefix:
             raise Exception(
                 f'Found "{prefix}" (nothing after this prefix) ' f"in csv_row:\n{csv_row}"
