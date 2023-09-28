@@ -24,9 +24,7 @@ class MessageClient:
         self.job_id = self.get_job_name()
 
     def connect(self, force_reconnect=False):
-        self.logger.log(
-            f"Attempting to connect to the server...{'forcefully' if force_reconnect else ''}"
-        )
+        self.logger.log(f"Attempting to connect to the server... force_reconnect={force_reconnect}")
 
         if self.socket and not force_reconnect:
             self.logger.log("Already connected.")
@@ -96,6 +94,7 @@ class MessageClient:
                 self.logger.log(f"Attempted to log: \n {message_str}")
                 print(f"Error: {e}. Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
+                logger.log("Reconnecting..."")
                 self.connect(force_reconnect=True)  # Try to reconnect
 
         self.logger.log("Failed to send messages after multiple retries.")
