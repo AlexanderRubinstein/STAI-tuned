@@ -3,13 +3,49 @@ from typing import List
 
 import numpy as np
 
-from .constants import NESTED_CONFIG_KEY_SEPARATOR, PROGRESS_FREQUENCY, INDENT, LOGGER_ARG_NAME, CONTROL_PREFIX, \
-    CONTROL_SUFFIX, CONTROL_SEPARATOR, DEFAULT_TEXT_STYLE, BOLD_TEXT_STYLE, BLACK_COLOR_CODE, RED_COLOR_CODE, \
-    GREEN_COLOR_CODE, PURPLE_COLOR_CODE, WHITE_COLOR_CODE, DEFAULT_EXPERIMENT, DEFAULT_NAME_PREFIX, LOG_PREFIX, \
-    INFO_PREFIX, ERROR_PREFIX, MAX_LINE_LENGTH, SEPARATOR, STATUS_CSV_COLUMN, RUN_FOLDER_CSV_COLUMN, WALLTIME_COLUMN, \
-    FIRST_REPORT_TIME_COLUMN, LAST_REPORT_TIME_COLUMN, RUNNING_STATUS, COMPLETED_STATUS, FAIL_STATUS, \
-    WHETHER_TO_RUN_COLUMN, OUTPUT_CSV_KEY, PATH_KEY, ROW_NUMBER_KEY, GDRIVE_FOLDER_KEY, STDOUT_KEY, STDERR_KEY, \
-    WANDB_URL_COLUMN, WANDB_QUIET, WANDB_INIT_RETRIES, WANDB_SLEEP_BETWEEN_INIT_RETRIES, PROJECT_KEY
+from .constants import (
+    NESTED_CONFIG_KEY_SEPARATOR,
+    PROGRESS_FREQUENCY,
+    INDENT,
+    LOGGER_ARG_NAME,
+    CONTROL_PREFIX,
+    CONTROL_SUFFIX,
+    CONTROL_SEPARATOR,
+    DEFAULT_TEXT_STYLE,
+    BOLD_TEXT_STYLE,
+    BLACK_COLOR_CODE,
+    RED_COLOR_CODE,
+    GREEN_COLOR_CODE,
+    PURPLE_COLOR_CODE,
+    WHITE_COLOR_CODE,
+    DEFAULT_EXPERIMENT,
+    DEFAULT_NAME_PREFIX,
+    LOG_PREFIX,
+    INFO_PREFIX,
+    ERROR_PREFIX,
+    MAX_LINE_LENGTH,
+    SEPARATOR,
+    STATUS_CSV_COLUMN,
+    RUN_FOLDER_CSV_COLUMN,
+    WALLTIME_COLUMN,
+    FIRST_REPORT_TIME_COLUMN,
+    LAST_REPORT_TIME_COLUMN,
+    RUNNING_STATUS,
+    COMPLETED_STATUS,
+    FAIL_STATUS,
+    WHETHER_TO_RUN_COLUMN,
+    OUTPUT_CSV_KEY,
+    PATH_KEY,
+    ROW_NUMBER_KEY,
+    GDRIVE_FOLDER_KEY,
+    STDOUT_KEY,
+    STDERR_KEY,
+    WANDB_URL_COLUMN,
+    WANDB_QUIET,
+    WANDB_INIT_RETRIES,
+    WANDB_SLEEP_BETWEEN_INIT_RETRIES,
+    PROJECT_KEY,
+)
 from .message_client import MessageClient, MessageType
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # suppress tf warning
@@ -17,18 +53,18 @@ import shutil
 import torch
 import sys
 import traceback
-import wandb # slow
+import wandb  # slow
 import contextlib
 import time
 import subprocess
-from torch.utils.tensorboard import SummaryWriter # a bit slow
+from torch.utils.tensorboard import SummaryWriter  # a bit slow
 import copy
-import gspread # a bit slow
-import pandas as pd # slow
+import gspread  # a bit slow
+import pandas as pd  # slow
 import csv
 import re
 import warnings
-from pydrive2.auth import GoogleAuth, RefreshError # a bit slow
+from pydrive2.auth import GoogleAuth, RefreshError  # a bit slow
 from pydrive2.drive import GoogleDrive
 import psutil
 import multiprocessing as mp
@@ -67,7 +103,8 @@ from .utils import (
     get_project_root_path,
     compute_tensor_cumsums,
     itself_and_lower_upper_case,
-    get_with_assert, current_time_formatted
+    get_with_assert,
+    current_time_formatted,
 )
 
 # Tensorboard
@@ -77,14 +114,11 @@ TB_CREDENTIALS_FIELDS = [
     "client_id",
     "client_secret",
     "scopes",
-    "type"
+    "type",
 ]
 TB_CREDENTIALS_DEFAULT = {
-    "scopes": [
-        "openid",
-        "https://www.googleapis.com/auth/userinfo.email"
-    ],
-    "type": "authorized_user"
+    "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email"],
+    "type": "authorized_user",
 }
 TB_URL_COLUMN = "Tensorboard url"
 TB_LOG_FOLDER = "tb_log"
@@ -109,14 +143,10 @@ DEFAULT_SPREADSHEET_ROWS = 100
 DEFAULT_SPREADSHEET_COLS = 20
 DEFAULT_SPREADSHEET_NAME = "default_spreadsheet"
 DEFAULT_GOOGLE_CREDENTIALS_PATH = os.path.join(
-    os.path.expanduser('~'),
-    ".config",
-    "gauth",
-    "credentials.json"
+    os.path.expanduser("~"), ".config", "gauth", "credentials.json"
 )
 DEFAULT_REFRESH_GOOGLE_CREDENTIALS = os.path.join(
-    os.path.dirname(DEFAULT_GOOGLE_CREDENTIALS_PATH),
-    "gauth_refresh_credentials.json"
+    os.path.dirname(DEFAULT_GOOGLE_CREDENTIALS_PATH), "gauth_refresh_credentials.json"
 )
 URL_ID_RE = re.compile(r"id=([a-zA-Z0-9-_]+)")
 URL_KEY_RE = re.compile(r"key=([^&#]+)")
@@ -128,7 +158,7 @@ DEFAULT_GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/drive.install",
     "https://www.googleapis.com/auth/drive.metadata",
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
+    "https://www.googleapis.com/auth/drive",
 ]
 FILE_TYPES_ALLOWED_TO_SYNC = ("text/plain", "application/x-yaml")
 SPREADSHEETS_URL = "https://docs.google.com/spreadsheets"
@@ -150,19 +180,15 @@ GPU_INFO_COLUMN = "gpu_info"
 CPU_COUNT_COLUMN = "cpu_count"
 
 
-def make_string_style(
-    text_style,
-    text_color
-):
+def make_string_style(text_style, text_color):
     return (
         f"{CONTROL_PREFIX}{text_style}{CONTROL_SEPARATOR}"
-            + f"{text_color}{CONTROL_SEPARATOR}"
-            + f"{BLACK_COLOR_CODE}{CONTROL_SUFFIX}"
-        )
+        + f"{text_color}{CONTROL_SEPARATOR}"
+        + f"{BLACK_COLOR_CODE}{CONTROL_SUFFIX}"
+    )
 
 
 def infer_logger_from_args(*args, **kwargs):
-
     # class with self.logger
     if hasattr(args[0], LOGGER_ARG_NAME):
         return getattr(args[0], LOGGER_ARG_NAME)
@@ -179,13 +205,9 @@ def infer_logger_from_args(*args, **kwargs):
     return None
 
 
-def retrier_factory_with_auto_logger(
-    **retrier_factory_kwargs
-):
+def retrier_factory_with_auto_logger(**retrier_factory_kwargs):
     return retrier_factory(
-        logger="auto",
-        infer_logger_from_args=infer_logger_from_args,
-        **retrier_factory_kwargs
+        logger="auto", infer_logger_from_args=infer_logger_from_args, **retrier_factory_kwargs
     )
 
 
@@ -196,7 +218,6 @@ class BaseLogger:
 # TODO(Alex | 13.07.2022) inherit from more sophisticated logger
 class RedneckLogger(BaseLogger):
     def __init__(self, output_folder=None, retry_print=True):
-
         warnings.showwarning = self.get_warning_wrapper()
 
         if output_folder:
@@ -227,14 +248,14 @@ class RedneckLogger(BaseLogger):
         # for keeping track columns
         self.self_columns = set()
 
-        self.socket_client : MessageClient = None
+        self.socket_client: MessageClient = None
 
     def store(self, name, msg):
         assert isinstance(msg, str)
         self.cache[name] = msg
 
     def dump(self, name):
-        self.log('\n' + self.cache[name])
+        self.log("\n" + self.cache[name])
 
     def get_output_folder(self):
         return self.output_folder
@@ -249,11 +270,10 @@ class RedneckLogger(BaseLogger):
         self.stdout_lock = make_file_lock(self.stdout_file)
         self.stderr_lock = make_file_lock(self.stderr_file)
 
-    def update_socket_client(self, messaging_client : MessageClient):
+    def update_socket_client(self, messaging_client: MessageClient):
         self.socket_client = messaging_client
 
     def create_logs_on_gdrive(self, gdrive_storage_folder_url):
-
         assert self.output_folder
 
         self.gdrive_storage_folder_url = gdrive_storage_folder_url
@@ -263,35 +283,22 @@ class RedneckLogger(BaseLogger):
         remote_run_folder = gdrive_client.create_node(
             os.path.basename(self.output_folder),
             node_type="folder",
-            parent_folder_id=extract_id_from_gdrive_url(
-                self.gdrive_storage_folder_url
-            )
+            parent_folder_id=extract_id_from_gdrive_url(self.gdrive_storage_folder_url),
         )
         remote_output = gdrive_client.create_node(
-            "stdout",
-            node_type="text",
-            parent_folder_id=remote_run_folder["id"]
+            "stdout", node_type="text", parent_folder_id=remote_run_folder["id"]
         )
         remote_stderr = gdrive_client.create_node(
-            "stderr",
-            node_type="text",
-            parent_folder_id=remote_run_folder["id"]
+            "stderr", node_type="text", parent_folder_id=remote_run_folder["id"]
         )
         self.remote_log_folder_url = remote_run_folder["embedLink"]
         self.remote_stdout_url = remote_output["embedLink"]
         self.remote_stderr_url = remote_stderr["embedLink"]
 
-        return (
-            self.remote_log_folder_url,
-            self.remote_stdout_url,
-            self.remote_stderr_url
-        )
-
+        return (self.remote_log_folder_url, self.remote_stdout_url, self.remote_stderr_url)
 
     def start_gdrive_daemon(self, sync_time=DAEMON_SLEEP_TIME):
-
         def daemon_task(logger, sync_time):
-
             gdrive_client = make_gdrive_client(logger)
             daemon_process = psutil.Process(os.getpid())
 
@@ -307,15 +314,11 @@ class RedneckLogger(BaseLogger):
         assert self.remote_stdout_url
         assert self.remote_stderr_url
 
-        self.gdrive_daemon = mp.Process(
-            target=daemon_task,
-            args=(self, sync_time)
-        )
+        self.gdrive_daemon = mp.Process(target=daemon_task, args=(self, sync_time))
         self.gdrive_daemon.daemon = True
         self.gdrive_daemon.start()
 
-
-    def set_csv_output(self, csv_output_config, use_socket = False):
+    def set_csv_output(self, csv_output_config, use_socket=False):
         self.csv_output = {}
         assert PATH_KEY in csv_output_config
         assert ROW_NUMBER_KEY in csv_output_config
@@ -324,10 +327,7 @@ class RedneckLogger(BaseLogger):
         self.csv_output = copy.deepcopy(csv_output_config)
         if self.csv_output["spreadsheet_url"] is not None and not use_socket:
             # TODO: uncomment this!!!!!!!!!!!!!!!!!!
-            self.gspread_client = make_gspread_client(
-                self,
-                DEFAULT_GOOGLE_CREDENTIALS_PATH
-            )
+            self.gspread_client = make_gspread_client(self, DEFAULT_GOOGLE_CREDENTIALS_PATH)
 
     def log_csv(self, column_value_pairs):
         if self.csv_output is not None:
@@ -338,88 +338,56 @@ class RedneckLogger(BaseLogger):
             self.csv_output[PATH_KEY],
             [
                 (self.csv_output[ROW_NUMBER_KEY], column_name, value)
-                    for column_name, value in column_value_pairs
-            ]
+                for column_name, value in column_value_pairs
+            ],
         )
 
     def log_separator(self):
-
         print(SEPARATOR)
 
         if self.stdout_file:
-            print(
-                SEPARATOR,
-                file=open(self.stdout_file, "a"),
-                flush=True
-            )
+            print(SEPARATOR, file=open(self.stdout_file, "a"), flush=True)
 
-    def progress(
-        self,
-        descripion,
-        current_step,
-        total_steps,
-        frequency=PROGRESS_FREQUENCY
-    ):
-        log_every_n_steps = \
-            max(1, round(PROGRESS_FREQUENCY * total_steps)) \
-                if frequency is not None \
-                else 1
+    def progress(self, descripion, current_step, total_steps, frequency=PROGRESS_FREQUENCY):
+        log_every_n_steps = (
+            max(1, round(PROGRESS_FREQUENCY * total_steps)) if frequency is not None else 1
+        )
         if (
             current_step % log_every_n_steps == 0
-                or current_step == 1
-                or current_step == 2
-                or current_step == total_steps
+            or current_step == 1
+            or current_step == 2
+            or current_step == total_steps
         ):
             self.log(
                 "{} {}/{}: {}/100%..".format(
                     descripion,
                     current_step,
                     total_steps,
-                    round(100 * float(current_step / (max(1, total_steps))))
+                    round(100 * float(current_step / (max(1, total_steps)))),
                 ),
-                carriage_return=(current_step != total_steps)
+                carriage_return=(current_step != total_steps),
             )
 
-    def log(
-        self,
-        msg,
-        auto_newline=False,
-        carriage_return=False
-    ):
-
+    def log(self, msg, auto_newline=False, carriage_return=False):
         self.print_output(
             msg,
             LOG_PREFIX,
-            prefix_style_code=make_string_style(
-                BOLD_TEXT_STYLE,
-                GREEN_COLOR_CODE
-            ),
-            message_style_code=make_string_style(
-                BOLD_TEXT_STYLE,
-                WHITE_COLOR_CODE
-            ),
+            prefix_style_code=make_string_style(BOLD_TEXT_STYLE, GREEN_COLOR_CODE),
+            message_style_code=make_string_style(BOLD_TEXT_STYLE, WHITE_COLOR_CODE),
             output_file=self.stdout_file,
             output_file_lock=self.stdout_lock,
             auto_newline=auto_newline,
-            carriage_return=carriage_return
+            carriage_return=carriage_return,
         )
+
     def log_safe(self, msg):
         try:
             self.log(msg)
         except Exception as e:
             self.log(f"Error logging message: {e}")
 
-    def info(
-        self,
-        msg,
-        auto_newline=False,
-        carriage_return=False
-    ):
-
-        info_style_code = make_string_style(
-            BOLD_TEXT_STYLE,
-            PURPLE_COLOR_CODE
-        )
+    def info(self, msg, auto_newline=False, carriage_return=False):
+        info_style_code = make_string_style(BOLD_TEXT_STYLE, PURPLE_COLOR_CODE)
 
         self.print_output(
             msg,
@@ -429,31 +397,19 @@ class RedneckLogger(BaseLogger):
             output_file=self.stdout_file,
             output_file_lock=self.stdout_lock,
             auto_newline=auto_newline,
-            carriage_return=carriage_return
+            carriage_return=carriage_return,
         )
 
-    def error(
-        self,
-        msg,
-        auto_newline=False,
-        carriage_return=False
-    ):
-
+    def error(self, msg, auto_newline=False, carriage_return=False):
         self.print_output(
             msg,
             ERROR_PREFIX,
-            prefix_style_code=make_string_style(
-                BOLD_TEXT_STYLE,
-                RED_COLOR_CODE
-            ),
-            message_style_code=make_string_style(
-                BOLD_TEXT_STYLE,
-                WHITE_COLOR_CODE
-            ),
+            prefix_style_code=make_string_style(BOLD_TEXT_STYLE, RED_COLOR_CODE),
+            message_style_code=make_string_style(BOLD_TEXT_STYLE, WHITE_COLOR_CODE),
             output_file=self.stderr_file,
             output_file_lock=self.stderr_lock,
             auto_newline=auto_newline,
-            carriage_return=carriage_return
+            carriage_return=carriage_return,
         )
 
     def print_output(self, *args, **kwargs):
@@ -463,10 +419,7 @@ class RedneckLogger(BaseLogger):
             self._print_output(*args, **kwargs)
 
     @retrier_factory_with_auto_logger()
-    def print_output_with_retries(
-        self,
-        *args, **kwargs
-    ):
+    def print_output_with_retries(self, *args, **kwargs):
         self._print_output(*args, **kwargs)
 
     def _print_output(
@@ -478,14 +431,10 @@ class RedneckLogger(BaseLogger):
         output_file=None,
         output_file_lock=None,
         auto_newline=False,
-        carriage_return=False
+        carriage_return=False,
     ):
-
-        msg_prefix = "{} {}".format(
-            get_current_time(),
-            prefix_keyword
-        )
-        end_char = '' if carriage_return else '\n'
+        msg_prefix = "{} {}".format(get_current_time(), prefix_keyword)
+        end_char = "" if carriage_return else "\n"
         print(
             self.make_log_message(
                 msg,
@@ -493,18 +442,14 @@ class RedneckLogger(BaseLogger):
                 prefix_style_code=prefix_style_code,
                 message_style_code=message_style_code,
                 auto_newline=auto_newline,
-                carriage_return=carriage_return
+                carriage_return=carriage_return,
             ),
             flush=True,
-            end=end_char
+            end=end_char,
         )
 
         if output_file:
-            with (
-                make_file_lock(output_file)
-                    if output_file_lock is None
-                    else output_file_lock
-            ):
+            with make_file_lock(output_file) if output_file_lock is None else output_file_lock:
                 print(
                     self.make_log_message(
                         msg,
@@ -512,11 +457,11 @@ class RedneckLogger(BaseLogger):
                         prefix_style_code="",
                         message_style_code="",
                         auto_newline=auto_newline,
-                        carriage_return=carriage_return
+                        carriage_return=carriage_return,
                     ),
                     file=open(output_file, "a"),
                     flush=True,
-                    end=end_char
+                    end=end_char,
                 )
 
     def make_log_message(
@@ -526,36 +471,21 @@ class RedneckLogger(BaseLogger):
         prefix_style_code="",
         message_style_code="",
         auto_newline=False,
-        carriage_return=False
+        carriage_return=False,
     ):
         outside_style_code = ""
         if prefix_style_code:
             assert message_style_code
-            outside_style_code = make_string_style(
-                DEFAULT_TEXT_STYLE,
-                WHITE_COLOR_CODE
-            )
+            outside_style_code = make_string_style(DEFAULT_TEXT_STYLE, WHITE_COLOR_CODE)
         return insert_char_before_max_width(
             "{}{}: {}{}{}".format(
-                prefix_style_code,
-                prefix,
-                message_style_code,
-                msg,
-                outside_style_code
+                prefix_style_code, prefix, message_style_code, msg, outside_style_code
             ),
-            MAX_LINE_LENGTH if auto_newline else 0
-        ) + ('\r' if carriage_return else '')
+            MAX_LINE_LENGTH if auto_newline else 0,
+        ) + ("\r" if carriage_return else "")
 
     def get_warning_wrapper(self):
-
-        def warning_wrapper(
-            message,
-            category,
-            filename,
-            lineno,
-            file=None,
-            line=None
-        ):
+        def warning_wrapper(message, category, filename, lineno, file=None, line=None):
             self.error(message, auto_newline=True)
 
         return warning_wrapper
@@ -579,7 +509,6 @@ class RedneckLogger(BaseLogger):
 
 
 def sync_output_with_remote(gdrive_client, logger):
-
     assert logger.stdout_file
     assert logger.stderr_file
     assert logger.remote_stdout_url
@@ -587,21 +516,15 @@ def sync_output_with_remote(gdrive_client, logger):
     assert logger.stdout_lock
     assert logger.stderr_lock
 
-    with (
-        NamedTemporaryFile('w+t', newline='') as tmp_file
-    ):
+    with NamedTemporaryFile("w+t", newline="") as tmp_file:
         for file, url, lock in [
             (logger.stdout_file, logger.remote_stdout_url, logger.stdout_lock),
-            (logger.stderr_file, logger.remote_stderr_url, logger.stderr_lock)
+            (logger.stderr_file, logger.remote_stderr_url, logger.stderr_lock),
         ]:
             with lock:
                 shutil.copy(file, tmp_file.name)
             sync_local_file_with_gdrive(
-                gdrive_client,
-                tmp_file.name,
-                url,
-                download=False,
-                logger=logger
+                gdrive_client, tmp_file.name, url, download=False, logger=logger
             )
 
 
@@ -610,30 +533,19 @@ def make_logger(output_folder=None):
 
 
 def make_logger_with_tmp_output_folder():
-    tmp_output_folder = get_current_run_folder(
-        DEFAULT_EXPERIMENT,
-        DEFAULT_NAME_PREFIX
-    )
+    tmp_output_folder = get_current_run_folder(DEFAULT_EXPERIMENT, DEFAULT_NAME_PREFIX)
 
     return make_logger(tmp_output_folder)
 
 
-def update_and_move_logger_output_folder(
-    logger,
-    new_output_folder,
-    require_old_folder=True
-):
+def update_and_move_logger_output_folder(logger, new_output_folder, require_old_folder=True):
     if require_old_folder and logger.output_folder is None:
         raise Exception("Old logger output folder is None.")
 
     os.makedirs(new_output_folder, exist_ok=True)
     if logger.output_folder is not None:
         old_output_folder = logger.output_folder
-        shutil.copytree(
-            old_output_folder,
-            new_output_folder,
-            dirs_exist_ok=True
-        )
+        shutil.copytree(old_output_folder, new_output_folder, dirs_exist_ok=True)
         logger.stderr_lock = None
         logger.stdout_lock = None
         shutil.rmtree(old_output_folder)
@@ -642,9 +554,7 @@ def update_and_move_logger_output_folder(
 
 def store_profiler_results(logger, profiler):
     logger.store(
-        "profiler_results",
-        extract_profiler_results(profiler)
-            + torch.cuda.memory_summary()
+        "profiler_results", extract_profiler_results(profiler) + torch.cuda.memory_summary()
     )
 
 
@@ -661,17 +571,12 @@ def handle_exception(logger, exception=None):
     write_logs_exception = [
         (STATUS_CSV_COLUMN, FAIL_STATUS),
         # This is questionable? I'd leave it as 0 @Alex
-        (WHETHER_TO_RUN_COLUMN, "0")
+        (WHETHER_TO_RUN_COLUMN, "0"),
     ]
     if logger.socket_client:
-       try_to_log_in_socket_in_batch(logger,
-                                     write_logs_exception,
-                                     sync=True)
+        try_to_log_in_socket_in_batch(logger, write_logs_exception, sync=True)
     else:
-        try_to_log_in_csv_in_batch(
-            logger,
-            write_logs_exception
-        )
+        try_to_log_in_csv_in_batch(logger, write_logs_exception)
 
         try_to_sync_csv_with_remote(logger)
     if "profiler_results" in logger.cache:
@@ -683,38 +588,52 @@ def handle_exception(logger, exception=None):
 
 
 def try_to_log_in_csv(logger, column_name, value):
-
     try_to_log_in_csv_in_batch(logger, [(column_name, value)])
 
 
-def try_to_log_in_csv_in_batch(logger : RedneckLogger, column_value_pairs):
-
+def try_to_log_in_csv_in_batch(logger: RedneckLogger, column_value_pairs):
     if logger.csv_output is not None:
         logger.log_csv(column_value_pairs)
 
-def try_to_log_in_socket_in_batch(logger : RedneckLogger, column_value_pairs, sync=True):
+
+def try_to_log_in_socket_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
     if logger.socket_client is not None:
         for cv_pair in column_value_pairs:
-            logger.socket_client.send_message(MessageType.JOB_RESULT_UPDATE, cv_pair[0], cv_pair[1], sync=False)
+            logger.socket_client.send_message(
+                MessageType.JOB_RESULT_UPDATE, cv_pair[0], cv_pair[1], sync=False
+            )
         if sync:
             logger.socket_client.sync_with_remote()
 
-def try_to_log_in_socket_with_msg_type_in_batch(logger : RedneckLogger, msg_type_column_value_pairs : List[List], sync=True):
+
+def try_to_log_in_socket_with_msg_type_in_batch(
+    logger: RedneckLogger, msg_type_column_value_pairs: List[List], sync=True
+):
     if logger.socket_client is not None:
         # Check if the format is correct
         if not isinstance(msg_type_column_value_pairs, list):
-            logger.log(f"Message type logging requires a list of lists of column value pairs, but found {type(msg_type_column_value_pairs)}")
+            logger.log(
+                f"Message type logging requires a list of lists of column value pairs, but found {type(msg_type_column_value_pairs)}"
+            )
 
         for msg_type, column_value_pairs in msg_type_column_value_pairs.items():
             if not isinstance(column_value_pairs, list):
-                logger.log(f"Message type logging requires a list of lists of column value pair, but found {type(column_value_pairs)}")
+                logger.log(
+                    f"Message type logging requires a list of lists of column value pair, but found {type(column_value_pairs)}"
+                )
             if len(column_value_pairs) != 2:
-                logger.log(f"Each message type should have a list of column value pairs of length 2, found {len(column_value_pairs)}")
+                logger.log(
+                    f"Each message type should have a list of column value pairs of length 2, found {len(column_value_pairs)}"
+                )
 
-            logger.socket_client.send_message(msg_type, column_value_pairs[0], column_value_pairs[1], sync=False)
+            logger.socket_client.send_message(
+                msg_type, column_value_pairs[0], column_value_pairs[1], sync=False
+            )
     if sync:
         logger.socket_client.sync_with_remote()
-def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True):
+
+
+def log_to_sheet_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
     # if a dict is passed, covnert to a list
 
     final_column_value_pairs = []
@@ -745,7 +664,10 @@ def log_to_sheet_in_batch(logger : RedneckLogger, column_value_pairs, sync=True)
         if sync:
             try_to_sync_csv_with_remote(logger)
 
-def log_to_sheet_with_msg_type_in_batch(logger : RedneckLogger, msg_type_column_value_pairs, sync=True):
+
+def log_to_sheet_with_msg_type_in_batch(
+    logger: RedneckLogger, msg_type_column_value_pairs, sync=True
+):
     # if logger.gspread_client is not None:
     if logger.socket_client is not None:
         for msg_type, column_value_pairs in msg_type_column_value_pairs.items():
@@ -754,27 +676,32 @@ def log_to_sheet_with_msg_type_in_batch(logger : RedneckLogger, msg_type_column_
         raise NotImplementedError("Message type logging is not implemented for csv logging")
 
 
-def try_to_sync_csv_with_remote(logger, sync_row_zero=True, report_aux=True, update_only_local_cols=False):
-    '''
+def try_to_sync_csv_with_remote(
+    logger, sync_row_zero=True, report_aux=True, update_only_local_cols=False
+):
+    """
 
     :param logger:
     :param sync_row_zero: if True, syncs row 0 of the csv file
     :param report_aux: if True, reports auxiliary info about the run:
         1. timestamp of the last log
-    '''
+    """
 
     if logger.gspread_client is not None:
-
         if report_aux:
             try_to_log_in_csv(logger, LAST_REPORT_TIME_COLUMN, current_time_formatted())
 
-        worksheet_names = [logger.csv_output["worksheet_name"]] \
-            if logger.csv_output["worksheet_name"] is not None \
+        worksheet_names = (
+            [logger.csv_output["worksheet_name"]]
+            if logger.csv_output["worksheet_name"] is not None
             else None
+        )
 
-        single_rows_per_csv = [logger.csv_output[ROW_NUMBER_KEY]] \
-            if logger.csv_output[ROW_NUMBER_KEY] is not None \
+        single_rows_per_csv = (
+            [logger.csv_output[ROW_NUMBER_KEY]]
+            if logger.csv_output[ROW_NUMBER_KEY] is not None
             else None
+        )
 
         csv_files = [logger.csv_output[PATH_KEY]]
         spreadsheet_url = logger.csv_output["spreadsheet_url"]
@@ -801,15 +728,8 @@ def try_to_log_in_wandb(logger, dict_to_log, step):
 
 
 def try_to_log_in_tb(
-    logger,
-    dict_to_log,
-    step,
-    step_offset=0,
-    flush=False,
-    text=False,
-    same_plot=False
+    logger, dict_to_log, step, step_offset=0, flush=False, text=False, same_plot=False
 ):
-
     if logger.tb_run:
         if text:
             for key, value in dict_to_log.items():
@@ -824,17 +744,11 @@ def try_to_log_in_tb(
                 step,
                 step_offset=step_offset,
                 flush=flush,
-                same_plot=same_plot
+                same_plot=same_plot,
             )
 
 
-def insert_char_before_max_width(
-    input_string,
-    max_width,
-    char='\n',
-    separator=" ",
-    indent=INDENT
-):
+def insert_char_before_max_width(input_string, max_width, char="\n", separator=" ", indent=INDENT):
     if len(input_string) == 0 or max_width == 0:
         return input_string
     current_line = ""
@@ -842,7 +756,7 @@ def insert_char_before_max_width(
     for word in input_string.split(separator):
         if current_line == "":
             current_line = word
-        elif (len(current_line) + len(word) <= max_width):
+        elif len(current_line) + len(word) <= max_width:
             current_line = current_line + separator + word
         else:
             result += current_line + char
@@ -852,10 +766,7 @@ def insert_char_before_max_width(
 
 
 def make_base_estimator_name(base_estimator_id):
-    return "{} {}".format(
-        BASE_ESTIMATOR_LOG_SUFFIX,
-        base_estimator_id
-    )
+    return "{} {}".format(BASE_ESTIMATOR_LOG_SUFFIX, base_estimator_id)
 
 
 @contextlib.contextmanager
@@ -866,7 +777,7 @@ def redneck_logger_context(
     exp_name="Default experiment",
     start_time=None,
     config_to_log_in_wandb=None,
-    using_socket = False
+    using_socket=False,
 ):
     if start_time is None:
         start_time = get_current_time()
@@ -875,20 +786,20 @@ def redneck_logger_context(
         logger = make_logger(output_folder=log_folder)
     elif logger.output_folder != log_folder:
         update_and_move_logger_output_folder(
-            logger,
-            new_output_folder=log_folder,
-            require_old_folder=False
+            logger, new_output_folder=log_folder, require_old_folder=False
         )
 
     if using_socket:
         # Establish the connection here
-        server_ip, server_port = config_to_log_in_wandb["logging"]["server_ip"], config_to_log_in_wandb["logging"]["server_port"]
+        server_ip, server_port = (
+            config_to_log_in_wandb["logging"]["server_ip"],
+            config_to_log_in_wandb["logging"]["server_port"],
+        )
         messaging_client = MessageClient(server_ip, server_port, logger)
         logger.socket_client = messaging_client
 
     logger.log("Hostname: {}".format(get_hostname()))
     logger.log("Process id: {}".format(os.getpid()))
-    
 
     # add csv folder if exists
     if OUTPUT_CSV_KEY in logging_config:
@@ -898,9 +809,7 @@ def redneck_logger_context(
         output_csv_path = output_config[PATH_KEY]
         if not os.path.exists(output_csv_path):
             touch_file(output_csv_path)
-        logger.set_csv_output(
-            logging_config[OUTPUT_CSV_KEY], using_socket
-        )
+        logger.set_csv_output(logging_config[OUTPUT_CSV_KEY], using_socket)
         # Get some other things too: cuda information, CPU count
         # and other things that are not in the config
         gpu_info = get_gpu_info()
@@ -913,7 +822,7 @@ def redneck_logger_context(
             (FIRST_REPORT_TIME_COLUMN, get_current_time()),
             (LAST_REPORT_TIME_COLUMN, get_current_time()),
             (GPU_INFO_COLUMN, gpu_info),
-            (CPU_COUNT_COLUMN, cpu_cores)
+            (CPU_COUNT_COLUMN, cpu_cores),
         ]
 
         # Also report all the "fixed_params" stuff from the config
@@ -921,12 +830,14 @@ def redneck_logger_context(
 
         def clean_list_string(lst):
             # Convert list to string, replace commas with spaces, and then remove any double spaces
-            return ' '.join(str(lst).replace(',', ' ').split())
+            return " ".join(str(lst).replace(",", " ").split())
 
-        def flatten_config(config, parent_key='', sep='.'):
+        def flatten_config(config, parent_key="", sep="."):
             if sep != NESTED_CONFIG_KEY_SEPARATOR:
-                warnings.warn(f"Nested config key separator is not {NESTED_CONFIG_KEY_SEPARATOR}, but {sep}. "
-                             f"Makes sure this is intended.")
+                warnings.warn(
+                    f"Nested config key separator is not {NESTED_CONFIG_KEY_SEPARATOR}, but {sep}. "
+                    f"Makes sure this is intended."
+                )
             items = {}
             for k, v in config.items():
                 new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -940,60 +851,43 @@ def redneck_logger_context(
 
         if "fixed_params" in config_to_log_in_wandb:
             flattened = flatten_config(config_to_log_in_wandb["fixed_params"])
-            deltas_to_report =  [("delta:" + k, v) for k, v in flattened.items()]
+            deltas_to_report = [("delta:" + k, v) for k, v in flattened.items()]
 
         info_to_report = info_to_report + deltas_to_report
 
         if logger.socket_client is not None:
             try_to_log_in_socket_in_batch(logger, info_to_report, sync=False)
         else:
-            try_to_log_in_csv_in_batch(
-                logger,
-                info_to_report
-            )
+            try_to_log_in_csv_in_batch(logger, info_to_report)
 
     # set up google drive sync
     if logging_config[GDRIVE_FOLDER_KEY] is not None:
-        logger.create_logs_on_gdrive(
-            logging_config[GDRIVE_FOLDER_KEY]
-        )
+        logger.create_logs_on_gdrive(logging_config[GDRIVE_FOLDER_KEY])
         logger.start_gdrive_daemon()
         logger.log(f"Remote folder with logs: {logger.remote_log_folder_url}")
 
         std_info_to_report = [
             (STDOUT_KEY, logger.remote_stdout_url),
-            (STDERR_KEY, logger.remote_stderr_url)
+            (STDERR_KEY, logger.remote_stderr_url),
         ]
 
         if logger.socket_client is not None:
-            try_to_log_in_socket_in_batch(
-                logger,
-                std_info_to_report,
-                sync=False
-            )
+            try_to_log_in_socket_in_batch(logger, std_info_to_report, sync=False)
         else:
-            try_to_log_in_csv_in_batch(
-                logger,
-                std_info_to_report
-            )
+            try_to_log_in_csv_in_batch(logger, std_info_to_report)
 
     use_tb = get_with_assert(logging_config, "use_tb")
     tb_log_dir = None
     tb_upload = False
     if use_tb:
-        tb_log_dir = os.path.join(
-            log_folder,
-            TB_LOG_FOLDER
-        )
+        tb_log_dir = os.path.join(log_folder, TB_LOG_FOLDER)
 
     use_wandb = get_with_assert(logging_config, "use_wandb")
     # init wandb_run if exists
     if use_wandb:
         wandb_config = logging_config["wandb"]
         wandb_dir = os.path.join(
-            get_system_root_path(),
-            "tmp",
-            f"wandb_{get_hostname()}_{os.getpid()}"
+            get_system_root_path(), "tmp", f"wandb_{get_hostname()}_{os.getpid()}"
         )
         os.makedirs(wandb_dir, exist_ok=True)
         if use_tb and wandb_config.get("sync_tb", False):
@@ -1003,7 +897,7 @@ def redneck_logger_context(
             exp_name,
             wandb_dir=wandb_dir,
             config=config_to_log_in_wandb,
-            logger=logger
+            logger=logger,
         )
         # extract wandb link
         wandb_url = logger.wandb_run.get_url()
@@ -1012,20 +906,10 @@ def redneck_logger_context(
             (WANDB_URL_COLUMN, wandb_url),
         ]
         if logger.socket_client is not None:
-            try_to_log_in_socket_in_batch(
-                logger,
-                log_wandb_info,
-                sync=False
-            )
+            try_to_log_in_socket_in_batch(logger, log_wandb_info, sync=False)
         else:
-            try_to_log_in_csv(
-                logger,
-                WANDB_URL_COLUMN,
-                wandb_url
-            )
-        logger.log(
-            "WandB url: {}".format(wandb_url)
-        )
+            try_to_log_in_csv(logger, WANDB_URL_COLUMN, wandb_url)
+        logger.log("WandB url: {}".format(wandb_url))
 
     # init tb run if exists
     if use_tb:
@@ -1040,11 +924,7 @@ def redneck_logger_context(
             run_tb_folder_listener,
             log_folder=log_folder,
             exp_name=exp_name,
-            description=(
-                "Run path: {}".format(
-                    log_folder
-                )
-            )
+            description=("Run path: {}".format(log_folder)),
         )
 
     # tell that logger is created
@@ -1057,7 +937,6 @@ def redneck_logger_context(
     yield logger
 
     if use_tb:
-
         logger.tb_run.close()
 
         if tb_upload:
@@ -1066,13 +945,13 @@ def redneck_logger_context(
                 tb_log_dir,
                 MAX_TIME_BETWEEN_TB_LOG_UPDATES,
                 MAX_TIME_TO_WAIT_FOR_TB_TO_SAVE_DATA,
-                check_time=None
+                check_time=None,
             )
             if tb_log_folder_still_updating is None:
                 logger.error(
                     f"Failed to start watchdog folder observer "
                     f"for tensorboard log folder."
-                    f"Most probably: \"[Errno 28] inotify watch limit reached\""
+                    f'Most probably: "[Errno 28] inotify watch limit reached"'
                 )
             elif tb_log_folder_still_updating:
                 logger.error(
@@ -1081,20 +960,14 @@ def redneck_logger_context(
                     f"(time between folder updates was "
                     f"at most {MAX_TIME_BETWEEN_TB_LOG_UPDATES})"
                 )
-            logger.log("Checking \"tensorboard dev upload\" output.")
+            logger.log('Checking "tensorboard dev upload" output.')
             # extract tb link
             tb_url = get_tb_url(logger, tb_process_spawner)
             # insert tb link in csv if exists
             if logger.socket_client is not None:
-                try_to_log_in_socket_in_batch(logger,
-                                              [(TB_URL_COLUMN, tb_url)],
-                                                sync=False)
+                try_to_log_in_socket_in_batch(logger, [(TB_URL_COLUMN, tb_url)], sync=False)
             else:
-                try_to_log_in_csv(
-                    logger,
-                    TB_URL_COLUMN,
-                    tb_url
-                )
+                try_to_log_in_csv(logger, TB_URL_COLUMN, tb_url)
             logger.log("Tensorboard url: {}".format(tb_url))
             logger.tb_run = None
 
@@ -1104,21 +977,14 @@ def redneck_logger_context(
     logger.finish_wandb(verbose=True)
 
     log_finish_results = [
-            (WALLTIME_COLUMN, str((get_current_time() - start_time))),
-            (STATUS_CSV_COLUMN, COMPLETED_STATUS),
-            (WHETHER_TO_RUN_COLUMN, "0")
-        ]
+        (WALLTIME_COLUMN, str((get_current_time() - start_time))),
+        (STATUS_CSV_COLUMN, COMPLETED_STATUS),
+        (WHETHER_TO_RUN_COLUMN, "0"),
+    ]
     if logger.socket_client is not None:
-        try_to_log_in_socket_in_batch(
-            logger,
-            log_finish_results,
-            sync=False
-        )
+        try_to_log_in_socket_in_batch(logger, log_finish_results, sync=False)
     else:
-        try_to_log_in_csv_in_batch(
-            logger,
-            log_finish_results
-        )
+        try_to_log_in_csv_in_batch(logger, log_finish_results)
     logger.log("Final log line for remote logs!")
     if logger.socket_client:
         logger.socket_client.sync_with_remote()
@@ -1129,12 +995,10 @@ def redneck_logger_context(
 
 
 def assert_tb_credentials(credentials_path):
-
     def assert_field(field_name, credentials_dict):
         assert field_name in credentials_dict
         if field_name in TB_CREDENTIALS_DEFAULT:
-            assert credentials_dict[field_name] \
-                == TB_CREDENTIALS_DEFAULT[field_name]
+            assert credentials_dict[field_name] == TB_CREDENTIALS_DEFAULT[field_name]
         else:
             assert isinstance(credentials_dict[field_name], str)
             assert len(credentials_dict[field_name])
@@ -1146,12 +1010,7 @@ def assert_tb_credentials(credentials_path):
         assert_field(field, credentials)
 
 
-def run_tb_folder_listener(
-    log_folder,
-    exp_name,
-    description=None
-):
-
+def run_tb_folder_listener(log_folder, exp_name, description=None):
     cmd_as_list = [
         "tensorboard",
         "dev",
@@ -1159,47 +1018,35 @@ def run_tb_folder_listener(
         "--logdir",
         os.path.join(log_folder, TB_LOG_FOLDER),
         "--name",
-        exp_name
+        exp_name,
     ]
 
     if description is not None:
         cmd_as_list += ["--description", description]
 
-    proc = subprocess.Popen(
-        cmd_as_list,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
+    proc = subprocess.Popen(cmd_as_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     return proc
 
 
 def get_tb_url(logger, tb_process_spawner):
-
     def read_proc_output(stream, total_output_size):
-
         size_read_so_far = 0
         result = ""
 
         while (
-            stream
-                and size_read_so_far < total_output_size
-                and not TENSORBOARD_FINISHED in result
+            stream and size_read_so_far < total_output_size and not TENSORBOARD_FINISHED in result
         ):
-
             result += stream.read(READ_BUFSIZE).decode("utf-8")
             size_read_so_far += READ_BUFSIZE
 
         return result
 
     def extract_link(output, logger):
-
         def assert_in_output(expected_string, output):
-            assert expected_string in output, \
-                "Expected \"{}\" in output:\n{}".format(
-                    expected_string,
-                    output
-                )
+            assert expected_string in output, 'Expected "{}" in output:\n{}'.format(
+                expected_string, output
+            )
 
         assert_in_output(TB_OUTPUT_BEFORE_LINK, output)
         assert_in_output(TB_OUTPUT_AFTER_LINK, output)
@@ -1207,16 +1054,11 @@ def get_tb_url(logger, tb_process_spawner):
         return result.split(TB_OUTPUT_AFTER_LINK)[0]
 
     def final_func(logger):
-        logger.error(
-            "Could not get a tb link.\nReason: {}".format(
-                traceback.format_exc()
-            )
-        )
+        logger.error("Could not get a tb link.\nReason: {}".format(traceback.format_exc()))
         return None
 
     @retrier_factory(logger, final_func)
     def try_to_extract_link(tb_process_spawner):
-
         tb_proc = tb_process_spawner()
 
         out = read_proc_output(tb_proc.stdout, TB_OUTPUT_SIZE_LIMIT)
@@ -1256,14 +1098,12 @@ def tb_log(
     step_offset=0,
     flush=False,
     skip_key_func=None,
-    same_plot=False
+    same_plot=False,
 ):
     def assert_scalar(value):
-        assert is_number(value), \
-                "Only scalars are supported for tensorboard."
+        assert is_number(value), "Only scalars are supported for tensorboard."
 
     def log_stat_func_wrapper(tb_run, nested_key_as_list, step):
-
         def log_stat_for_given_args(value):
             stat_name = ".".join(nested_key_as_list)
             assert_scalar(value)
@@ -1274,34 +1114,25 @@ def tb_log(
         return log_stat_for_given_args
 
     def log_multiple_curves(tb_run, stats_dict, step):
-
         assert is_nested_dict(stats_dict)
 
         for plot_name, curves_dict in stats_dict.items():
-
             assert not is_nested_dict(curves_dict)
 
             for value in curves_dict.values():
                 assert_scalar(value)
 
-                tb_run.add_scalars(
-                    plot_name,
-                    curves_dict,
-                    global_step=step
-                )
+                tb_run.add_scalars(plot_name, curves_dict, global_step=step)
 
     step = current_step + step_offset
 
     if same_plot:
-
         log_multiple_curves(tb_run, stats_dict, step)
 
     else:
-
         dict_leaves_as_nested_keys = get_leaves_of_nested_dict(stats_dict)
 
         for nested_key_as_list in dict_leaves_as_nested_keys:
-
             assert len(nested_key_as_list)
             if skip_key_func is not None and skip_key_func(nested_key_as_list):
                 continue
@@ -1309,7 +1140,7 @@ def tb_log(
             apply_func_to_dict_by_nested_key(
                 stats_dict,
                 nested_key_as_list,
-                func=log_stat_func_wrapper(tb_run, nested_key_as_list, step)
+                func=log_stat_func_wrapper(tb_run, nested_key_as_list, step),
             )
 
     if flush:
@@ -1317,31 +1148,16 @@ def tb_log(
 
 
 def extract_id_from_spreadsheet_url(spreadsheet_url):
-
-    return extract_by_regex_from_url(
-        spreadsheet_url,
-        [
-            URL_KEY_RE,
-            URL_SPREADSHEET_RE
-        ]
-    )
+    return extract_by_regex_from_url(spreadsheet_url, [URL_KEY_RE, URL_SPREADSHEET_RE])
 
 
 def extract_id_from_gdrive_url(gdrive_url):
-
     return extract_by_regex_from_url(
-        gdrive_url,
-        [
-            URL_ID_RE,
-            URL_KEY_RE,
-            URL_FILE_RE,
-            URL_FOLDER_RE
-        ]
+        gdrive_url, [URL_ID_RE, URL_KEY_RE, URL_FILE_RE, URL_FOLDER_RE]
     )
 
 
 def extract_by_regex_from_url(url, regexes):
-
     for regex in regexes:
         match = regex.search(url)
         if match:
@@ -1351,50 +1167,34 @@ def extract_by_regex_from_url(url, regexes):
 
 
 class GspreadClient:
-
-    def __init__(
-        self,
-        logger,
-        gspread_credentials,
-        cache_spreadsheet = False
-    ):
+    def __init__(self, logger, gspread_credentials, cache_spreadsheet=False):
         self.logger = logger
         self.gspread_credentials = gspread_credentials
-        self.client : gspread.client = self._create_client()
+        self.client: gspread.client = self._create_client()
 
         self.cache_spreadsheet = cache_spreadsheet
         self.opened_spreadsheet = None
+
     @retrier_factory_with_auto_logger()
     def _create_client(self):
-
-        _, auth_user_filename = make_google_auth(
-            self.gspread_credentials,
-            logger=self.logger
-        )
+        _, auth_user_filename = make_google_auth(self.gspread_credentials, logger=self.logger)
         return gspread.oauth(
             credentials_filename=self.gspread_credentials,
-            authorized_user_filename=auth_user_filename
+            authorized_user_filename=auth_user_filename,
         )
 
     @retrier_factory_with_auto_logger()
-    def delete_spreadsheet(
-        self,
-        spreadsheet_url
-    ):
-
+    def delete_spreadsheet(self, spreadsheet_url):
         assert self.client
-        self.client.del_spreadsheet(
-            extract_id_from_spreadsheet_url(spreadsheet_url)
-        )
+        self.client.del_spreadsheet(extract_id_from_spreadsheet_url(spreadsheet_url))
 
     @retrier_factory_with_auto_logger()
     def get_spreadsheet_by_url(self, spreadsheet_url):
         if self.opened_spreadsheet is not None and self.cache_spreadsheet:
             return self.opened_spreadsheet
         if spreadsheet_url is None:
-
             spreadsheet = self.client.create(
-                DEFAULT_SPREADSHEET_NAME + '_' + str(get_current_time())
+                DEFAULT_SPREADSHEET_NAME + "_" + str(get_current_time())
             )
 
             self.opened_spreadsheet = spreadsheet
@@ -1414,24 +1214,17 @@ class GspreadClient:
         for worksheet in existing_worksheets:
             if worksheet.title == worksheet_name:
                 referenced_worksheet = worksheet
-        assert referenced_worksheet is not None, \
-            f"Could not find worksheet with name {worksheet_name} in spreadsheet {spreadsheet_url}"
+        assert (
+            referenced_worksheet is not None
+        ), f"Could not find worksheet with name {worksheet_name} in spreadsheet {spreadsheet_url}"
         return referenced_worksheet
-
-
 
     @retrier_factory_with_auto_logger()
     def upload_csvs_to_spreadsheet(
-        self,
-        spreadsheet_url,
-        csv_files,
-        worksheet_names=None,
-        single_rows_per_csv=None
+        self, spreadsheet_url, csv_files, worksheet_names=None, single_rows_per_csv=None
     ):
-
         def assert_list(value):
-            assert isinstance(value, list), \
-                f"Expected list instead of {value}"
+            assert isinstance(value, list), f"Expected list instead of {value}"
 
         assert_list(csv_files)
         if worksheet_names is not None:
@@ -1444,23 +1237,16 @@ class GspreadClient:
         if spreadsheet_url is None:
             new_spreadsheet = True
 
-        spreadsheet : gspread.client = self.get_spreadsheet_by_url(
-            spreadsheet_url
-        )
+        spreadsheet: gspread.client = self.get_spreadsheet_by_url(spreadsheet_url)
 
         existing_worksheets = list(spreadsheet.worksheets())
         first_worksheet = existing_worksheets[0]
-        existing_worksheets = list(
-            worksheet.title for worksheet in existing_worksheets
-        )
+        existing_worksheets = list(worksheet.title for worksheet in existing_worksheets)
 
         if new_spreadsheet:
             worksheet_names = []
             for csv_file_path in csv_files:
-
-                worksheet_names.append(
-                    extract_csv_name_from_path(csv_file_path)
-                )
+                worksheet_names.append(extract_csv_name_from_path(csv_file_path))
         elif worksheet_names is None:
             worksheet_names = existing_worksheets
 
@@ -1471,7 +1257,6 @@ class GspreadClient:
         removed_default_worksheet = False
 
         for i in range(len(csv_files)):
-
             csv_file_path = csv_files[i]
             worksheet_name = worksheet_names[i]
 
@@ -1480,21 +1265,19 @@ class GspreadClient:
                 single_row = single_rows_per_csv[i]
 
             with make_file_lock(csv_file_path):
-
                 if worksheet_name not in existing_worksheets:
                     spreadsheet.add_worksheet(
                         title=worksheet_name,
                         rows=DEFAULT_SPREADSHEET_ROWS,
-                        cols=DEFAULT_SPREADSHEET_COLS
+                        cols=DEFAULT_SPREADSHEET_COLS,
                     )
                     existing_worksheets.add(worksheet_name)
 
                 if (
                     new_spreadsheet
-                        and worksheet_name != first_worksheet
-                        and not removed_default_worksheet
+                    and worksheet_name != first_worksheet
+                    and not removed_default_worksheet
                 ):
-
                     assert len(existing_worksheets) == 2
                     spreadsheet.del_worksheet(first_worksheet)
                     removed_default_worksheet = True
@@ -1505,7 +1288,6 @@ class GspreadClient:
                     # Get the sheetId for the worksheet
                     worksheet_obj = spreadsheet.worksheet(worksheet_name)
                     sheet_id = worksheet_obj.id
-
 
                     rows_to_update = single_rows_per_csv[i]
 
@@ -1519,8 +1301,8 @@ class GspreadClient:
                         a1_range_to_update = f"{worksheet_name}!1:1"
                         spreadsheet.values_update(
                             a1_range_to_update,
-                            params={'valueInputOption': 'USER_ENTERED'},
-                            body={'values': [header_data]}
+                            params={"valueInputOption": "USER_ENTERED"},
+                            body={"values": [header_data]},
                         )
                     else:
                         for row_num in rows_to_update:
@@ -1534,13 +1316,17 @@ class GspreadClient:
                                         "startRowIndex": row_num,
                                         "endRowIndex": row_num + 1,
                                         "startColumnIndex": 0,
-                                        "endColumnIndex": len(values_to_update[0])
+                                        "endColumnIndex": len(values_to_update[0]),
                                     },
-                                    "rows": [{
-                                        "values": [{"userEnteredValue": {"stringValue": value}} for value in
-                                                values_to_update[0]],
-                                    }],
-                                    "fields": "userEnteredValue"
+                                    "rows": [
+                                        {
+                                            "values": [
+                                                {"userEnteredValue": {"stringValue": value}}
+                                                for value in values_to_update[0]
+                                            ],
+                                        }
+                                    ],
+                                    "fields": "userEnteredValue",
                                 }
                             }
                             # request = {
@@ -1563,9 +1349,7 @@ class GspreadClient:
                             requests.append(request)
 
                             # Now, batch all the requests together
-                        body = {
-                            "requests": requests
-                        }
+                        body = {"requests": requests}
                         spreadsheet.batch_update(body)
 
                 # a1_range_ to_update = worksheet_name
@@ -1584,13 +1368,8 @@ class GspreadClient:
 
     @retrier_factory_with_auto_logger()
     def download_spreadsheet_as_csv(
-        self,
-        spreadsheet_url,
-        folder_for_csv,
-        worksheet_names=None,
-        downloaded_files_prefix=''
+        self, spreadsheet_url, folder_for_csv, worksheet_names=None, downloaded_files_prefix=""
     ):
-
         os.makedirs(folder_for_csv, exist_ok=True)
 
         spreadsheet = self.get_spreadsheet_by_url(spreadsheet_url)
@@ -1599,19 +1378,12 @@ class GspreadClient:
 
         result = []
         for name, sheet in worksheets_dict.items():
-
             df = pd.DataFrame(sheet.get_all_values())
 
             df.rename(columns=df.iloc[0], inplace=True)
             df.drop(df.index[0], inplace=True)
-            csv_path = os.path.join(
-                folder_for_csv,
-                downloaded_files_prefix + name + ".csv"
-            )
-            df.to_csv(
-                csv_path,
-                index=False
-            )
+            csv_path = os.path.join(folder_for_csv, downloaded_files_prefix + name + ".csv")
+            df.to_csv(csv_path, index=False)
             result.append(csv_path)
 
         return result
@@ -1634,32 +1406,18 @@ def get_or_create_column(worksheet, column_name):
     return column_number
 
 
-def make_gspread_client(
-    logger,
-    gspread_credentials=DEFAULT_GOOGLE_CREDENTIALS_PATH
-):
-    return GspreadClient(
-        logger,
-        gspread_credentials=gspread_credentials,
-        cache_spreadsheet=True
-    )
+def make_gspread_client(logger, gspread_credentials=DEFAULT_GOOGLE_CREDENTIALS_PATH):
+    return GspreadClient(logger, gspread_credentials=gspread_credentials, cache_spreadsheet=True)
 
 
 def build_spreadsheet_dict(spreadsheet, worksheet_names):
-
     if worksheet_names is None:
-
-        worksheets_dict = {
-            worksheet.title: worksheet
-                for worksheet
-                in spreadsheet.worksheets()
-        }
+        worksheets_dict = {worksheet.title: worksheet for worksheet in spreadsheet.worksheets()}
 
     else:
-
         worksheets_dict = {
             worksheet_name: spreadsheet.worksheet(worksheet_name)
-                for worksheet_name in worksheet_names
+            for worksheet_name in worksheet_names
         }
 
     return worksheets_dict
@@ -1667,28 +1425,15 @@ def build_spreadsheet_dict(spreadsheet, worksheet_names):
 
 def extract_csv_name_from_path(csv_file_path):
     assert ".csv" in csv_file_path
-    return os.path.basename(csv_file_path).replace(".csv", '')
+    return os.path.basename(csv_file_path).replace(".csv", "")
 
 
 @retrier_factory_with_auto_logger(
-    max_retries=WANDB_INIT_RETRIES,
-    sleep_time=WANDB_SLEEP_BETWEEN_INIT_RETRIES
+    max_retries=WANDB_INIT_RETRIES, sleep_time=WANDB_SLEEP_BETWEEN_INIT_RETRIES
 )
-def init_wandb_run(
-    wandb_config,
-    exp_name,
-    wandb_dir,
-    config,
-    logger
-):
-
-    wandb_password = get_value_from_config(
-        wandb_config["netrc_path"],
-        "password"
-    )
-    wandb.login(
-        key=wandb_password
-    )
+def init_wandb_run(wandb_config, exp_name, wandb_dir, config, logger):
+    wandb_password = get_value_from_config(wandb_config["netrc_path"], "password")
+    wandb.login(key=wandb_password)
 
     settings = None
     if SYSTEM_PLATFORM == "linux":
@@ -1701,19 +1446,14 @@ def init_wandb_run(
         settings=settings,
         sync_tensorboard=wandb_config.get("sync_tb", False),
         config=config,
-        **wandb_init_kwargs
+        **wandb_init_kwargs,
     )
     api = wandb.Api(api_key=wandb_password).run(run.path)
     return run, api
 
 
 class GdriveClient:
-
-    def __init__(
-        self,
-        logger,
-        credentials_file
-    ):
+    def __init__(self, logger, credentials_file):
         self.logger = logger
 
         self.credentials = credentials_file
@@ -1722,18 +1462,14 @@ class GdriveClient:
 
     @retrier_factory_with_auto_logger()
     def _create_client(self):
-
         gauth, _ = make_google_auth(self.credentials)
         return GoogleDrive(gauth)
 
     def get_node_by_id(self, node_id):
-        return self.client.CreateFile({'id': node_id})
+        return self.client.CreateFile({"id": node_id})
 
     def create_node(self, node_name, node_type, parent_folder_id=None):
-
-        metadata = {
-            'title': node_name
-        }
+        metadata = {"title": node_name}
 
         if node_type == "text":
             metadata["mimeType"] = "text/plain"
@@ -1743,26 +1479,16 @@ class GdriveClient:
             raise_unknown("node type", node_type, "GdriveClient.create_node()")
 
         if parent_folder_id is not None:
-            metadata["parents"] = [
-                {
-                    "kind": "drive#fileLink",
-                    "id": parent_folder_id
-                }
-            ]
+            metadata["parents"] = [{"kind": "drive#fileLink", "id": parent_folder_id}]
 
-        new_node = self.client.CreateFile(
-            metadata=metadata
-        )
+        new_node = self.client.CreateFile(metadata=metadata)
 
         new_node.Upload()
 
         return new_node
 
 
-def make_gdrive_client(
-    logger,
-    credentials_file=DEFAULT_GOOGLE_CREDENTIALS_PATH
-):
+def make_gdrive_client(logger, credentials_file=DEFAULT_GOOGLE_CREDENTIALS_PATH):
     return GdriveClient(logger, credentials_file=credentials_file)
 
 
@@ -1770,9 +1496,8 @@ def make_google_auth(
     credentials_json,
     auth_user_json_path=DEFAULT_REFRESH_GOOGLE_CREDENTIALS,
     scopes=DEFAULT_GOOGLE_SCOPES,
-    logger=None
+    logger=None,
 ):
-
     def do_gauth(settings):
         gauth = GoogleAuth(settings=settings)
         gauth.CommandLineAuth()
@@ -1784,22 +1509,19 @@ def make_google_auth(
         "client_config_backend": "settings",
         "client_config": {
             "client_id": credentials["client_id"],
-            "client_secret": credentials["client_secret"]
+            "client_secret": credentials["client_secret"],
         },
         "save_credentials": True,
         "save_credentials_backend": "file",
         "save_credentials_file": auth_user_json_path,
         "get_refresh_token": True,
-        "oauth_scope": scopes
+        "oauth_scope": scopes,
     }
 
     try:
         gauth = do_gauth(settings)
     except RefreshError:
-        log_or_print(
-            "GAUTH token needs to be refreshed. Removing old one.",
-            logger
-        )
+        log_or_print("GAUTH token needs to be refreshed. Removing old one.", logger)
         remove_file_or_folder(auth_user_json_path)
         gauth = do_gauth(settings)
 
@@ -1808,13 +1530,8 @@ def make_google_auth(
 
 @retrier_factory_with_auto_logger()
 def sync_local_file_with_gdrive(
-    gdrive_client,
-    local_filepath,
-    remote_url,
-    download=False,
-    logger=None
+    gdrive_client, local_filepath, remote_url, download=False, logger=None
 ):
-
     remote_file = get_gdrive_file_by_url(gdrive_client, remote_url)
 
     assert remote_file["mimeType"] in FILE_TYPES_ALLOWED_TO_SYNC
@@ -1831,37 +1548,29 @@ def get_gdrive_file_by_url(gdrive_client, remote_url):
     file_id = extract_id_from_gdrive_url(remote_url)
     return gdrive_client.get_node_by_id(file_id)
 
+
 def read_csv_as_dict_lock(csv_path):
     lock = make_file_lock(csv_path)
     with lock:
         csv_as_dict = read_csv_as_dict(csv_path)
     return csv_as_dict
-def log_csv_for_concurrent(
-    csv_path,
-    row_col_value_triplets
-):
+
+
+def log_csv_for_concurrent(csv_path, row_col_value_triplets):
     lock = make_file_lock(csv_path)
     remove_chars = [QUOTE_CHAR]
     row_col_value_triplets_clean = []
     with lock:
         for csv_row_number, column_name, value in row_col_value_triplets:
-
             column_name = as_str_for_csv(column_name, remove_chars)
             value = as_str_for_csv(value, remove_chars)
-            row_col_value_triplets_clean.append(
-                (csv_row_number, column_name, value)
-            )
+            row_col_value_triplets_clean.append((csv_row_number, column_name, value))
 
             write_into_csv_with_column_names(
-                csv_path,
-                csv_row_number,
-                column_name,
-                value,
-                replace_nulls=True,
-                use_lock=False
+                csv_path, csv_row_number, column_name, value, replace_nulls=True, use_lock=False
             )
     time.sleep(TIME_TO_LOSE_LOCK_IF_CONCURRENT)
-    
+
     # Do we really need to check??
     # with lock:
     #     csv_as_dict = read_csv_as_dict(csv_path)
@@ -1876,7 +1585,6 @@ def log_csv_for_concurrent(
 
 
 class RedneckProgressBar:
-
     def __init__(self, total_steps, description="", logger=None):
         self.logger = logger
         self.description = description
@@ -1886,28 +1594,16 @@ class RedneckProgressBar:
     def update(self):
         self.current_step += 1
         if self.logger is None:
-            print(
-                f"{self.description}: "
-                f"{self.current_step}/{self.total_steps}"
-            )
+            print(f"{self.description}: " f"{self.current_step}/{self.total_steps}")
         else:
-            self.logger.progress(
-                self.description,
-                self.current_step,
-                self.total_steps
-            )
+            self.logger.progress(self.description, self.current_step, self.total_steps)
 
 
 def make_progress_bar(total_steps, description="", logger=None):
     return RedneckProgressBar(total_steps, description, logger)
 
 
-def fetch_csv(
-    csv_path,
-    logger,
-    downloaded_file_prefix=''
-):
-
+def fetch_csv(csv_path, logger, downloaded_file_prefix=""):
     spreadsheet_url = None
     worksheet_name = None
     gspread_client = None
@@ -1929,10 +1625,10 @@ def fetch_csv(
             spreadsheet_url,
             os.path.join(
                 get_default_csv_folder(),
-                spreadsheet_url.split("edit#gid")[0].replace(os.sep, "(slash)")
+                spreadsheet_url.split("edit#gid")[0].replace(os.sep, "(slash)"),
             ),
             worksheet_names=worksheet_names,
-            downloaded_files_prefix=downloaded_file_prefix
+            downloaded_files_prefix=downloaded_file_prefix,
         )
         assert len(csv_paths) == 1
         csv_path = csv_paths[0]
@@ -1941,23 +1637,13 @@ def fetch_csv(
 
 
 def get_default_csv_folder():
-    return os.path.join(
-        get_project_root_path(),
-        "inputs"
-    )
+    return os.path.join(get_project_root_path(), "inputs")
 
 
-def try_to_upload_csv(
-    csv_path,
-    spreadsheet_url,
-    worksheet_name,
-    gspread_client
-):
+def try_to_upload_csv(csv_path, spreadsheet_url, worksheet_name, gspread_client):
     if gspread_client is not None:
         gspread_client.upload_csvs_to_spreadsheet(
-            spreadsheet_url,
-            csv_files=[csv_path],
-            worksheet_names=[worksheet_name]
+            spreadsheet_url, csv_files=[csv_path], worksheet_names=[worksheet_name]
         )
 
 
@@ -1979,7 +1665,4 @@ def log_info(logger, tensor, name):
     logger.log(f"{name} norm: {torch.linalg.norm(tensor)}")
     cumsums = compute_tensor_cumsums(tensor)
     for dim_i in range(len(cumsums)):
-        logger.log(
-            f"{name} norm of cumsum for dim: {dim_i}: "
-            f"{cumsums[dim_i]}"
-        )
+        logger.log(f"{name} norm of cumsum for dim: {dim_i}: " f"{cumsums[dim_i]}")
