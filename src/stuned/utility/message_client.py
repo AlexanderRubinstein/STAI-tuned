@@ -24,10 +24,14 @@ class MessageClient:
         self.job_id = self.get_job_name()
 
     def connect(self, force_reconnect=False):
+        self.logger.log(
+            f"Attempting to connect to the server...{'forcefully' if force_reconnect else ''}"
+        )
+
         if self.socket and not force_reconnect:
             self.logger.log("Already connected.")
             return
-    
+
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.server_ip, self.server_port))
@@ -35,7 +39,6 @@ class MessageClient:
         except Exception as e:
             self.logger.log(f"Error trying to open the socket: {e}")
             self.socket = None
-
 
     def get_job_name(self):
         return int(os.environ.get("SLURM_JOB_ID", str(os.getpid())))
