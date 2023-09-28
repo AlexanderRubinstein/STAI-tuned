@@ -106,8 +106,12 @@ def find_nested_keys_by_keyword_in_config(
             res.extend(subpaths)
         return res
     else:
-        assert prefix
-        assert prefix[-1] == separator
+        assert prefix, "prefix should not be empty"
+        assert prefix[-1] == separator, "prefix should end with separator"
+        # only "output_csv" and "netrc_path" should be allowed here. TODO: make sure of that
+        if "output_csv" not in prefix and "netrc_path" not in prefix:
+            return []
+
         if keyword in prefix:
             return [prefix[:-1]]
     return []

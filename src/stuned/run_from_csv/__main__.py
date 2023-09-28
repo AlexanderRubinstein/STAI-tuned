@@ -1660,7 +1660,7 @@ def extract_from_csv_row_by_prefix(csv_row, prefix, ignore_values):
     prefix_len = len(prefix)
     result = {}
     for key, value in csv_row.items():
-        assert key is not None, "Possibly inconsistent number of delimeters."
+        assert key is not None, f"Possibly inconsistent number of delimeters. Found key={key} in csv_row={csv_row} with value={value}"
         if key == prefix:
             raise Exception(
                 f'Found "{prefix}" (nothing after this prefix) ' f"in csv_row:\n{csv_row}"
