@@ -1282,7 +1282,17 @@ class GspreadClient:
                     spreadsheet.del_worksheet(first_worksheet)
                     removed_default_worksheet = True
 
-                csv_file_as_list = list(csv.reader(open(csv_file_path)))
+                # csv_file_as_list = list(csv.reader(open(csv_file_path)))
+
+                # read in a safe way
+                csv_file_as_list = []
+                with open(csv_file_path, 'r') as csv_file:
+                    csv_reader = csv.reader(csv_file)
+                    try:
+                        for line_number, row in enumerate(csv_reader, start=1):
+                            csv_file_as_list.append(row)
+                    except csv.Error as e:
+                        raise ValueError(f"CSV error in file {csv_file_path} on line {line_number}: {e}")
 
                 if single_rows_per_csv and single_rows_per_csv[i]:
                     # Get the sheetId for the worksheet
