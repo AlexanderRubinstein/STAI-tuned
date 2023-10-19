@@ -891,9 +891,13 @@ def write_into_csv_with_column_names(
                             assert len(row) > pos_in_row, \
                                 "CSV's contents are inconsistent " \
                                 "with the number of columns " \
-                                "for the file {}".format(
-                                    file_path
+                                "for the file {}. Requested to insert " \
+                                "column {} into row {} ".format(
+                                    file_path,
+                                    column_name,
+                                    row_number,
                                 )
+
                             row[pos_in_row] = value
                         value_inserted = True
                     elif appended_column and current_row_number > 0:
