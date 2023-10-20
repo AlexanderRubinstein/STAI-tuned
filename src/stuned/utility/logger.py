@@ -1577,7 +1577,7 @@ def log_csv_for_concurrent(csv_path, row_col_value_triplets):
             row_col_value_triplets_clean.append((csv_row_number, column_name, value))
 
             write_into_csv_with_column_names(
-                csv_path, csv_row_number, column_name, value, replace_nulls=True, use_lock=True
+                csv_path, csv_row_number, column_name, value, replace_nulls=True, use_lock=False, lock_to_use = lock
             )
     time.sleep(TIME_TO_LOSE_LOCK_IF_CONCURRENT)
 

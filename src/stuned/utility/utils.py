@@ -793,7 +793,8 @@ def write_into_csv_with_column_names(
     doublequote=True,
     replace_nulls=False,
     append_row=False,
-    use_lock=True
+    use_lock=True,
+    lock_to_use=None
 ):
     """
     Insert <value> into the intersection of row number <row_number>
@@ -825,7 +826,7 @@ def write_into_csv_with_column_names(
 
     tempfile = NamedTemporaryFile('w+t', newline='', delete=False)
 
-    lock = make_file_lock(file_path) if use_lock else NULL_CONTEXT
+    lock = make_file_lock(file_path) if (lock_to_use is None and use_lock) else lock_to_use if lock_to_use else NULL_CONTEXT
 
     with lock:
 
