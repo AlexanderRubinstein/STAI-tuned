@@ -893,11 +893,15 @@ def write_into_csv_with_column_names(
                                 "CSV's contents are inconsistent " \
                                 "with the number of columns " \
                                 "for the file {}. Requested to insert " \
-                                "column {} into row {} ".format(
+                                "column {} into row {} \nFound {} columns " \
+                                 "in the row, while expected at least {}." \
+                                  .format(
                                     file_path,
                                     column_name,
                                     row_number,
-                                )
+                                    len(row),
+                                    pos_in_row + 1
+                            )
 
                             row[pos_in_row] = value
                         value_inserted = True
@@ -925,9 +929,16 @@ def write_into_csv_with_column_names(
                     row_number
                 )
             )
-
-        shutil.move(tempfile.name, file_path)
-
+        try:
+            shutil.move(tempfile.name, file_path)
+        except Exception as e:
+            raise Exception(
+                "Error while moving temp file {} to {}:\n{}".format(
+                    tempfile.name,
+                    file_path,
+                    e
+                )
+            )
 
 def count_rows_in_file(file):
 
