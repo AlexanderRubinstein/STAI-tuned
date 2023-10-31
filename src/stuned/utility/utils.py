@@ -1878,10 +1878,16 @@ def get_with_assert(container, key, error_msg=None):
             return get_with_assert(next_container, rest_key, error_msg)
 
 
-def properties_diff(first_object, second_object):
+def properties_diff(first_object, second_object, only_local=True):
+    if only_local:
+        first_object_properties = first_object.__dict__.keys()
+        second_object_properties = second_object.__dict__.keys()
+    else:
+        first_object_properties = dir(first_object)
+        second_object_properties = dir(second_object)
     return (
-        set(first_object.__dict__.keys()).difference(
-            set(second_object.__dict__.keys())
+        set(first_object_properties).difference(
+            set(second_object_properties)
         )
     )
 
@@ -1902,8 +1908,8 @@ def get_even_from_wrapped(giver, wrappable_as_property, property_to_get):
     return None
 
 
-def add_custom_properties(giver, taker):
-    custom_properties = properties_diff(giver, taker)
+def add_custom_properties(giver, taker, only_local=True):
+    custom_properties = properties_diff(giver, taker, only_local=only_local)
     for custom_property in custom_properties:
         setattr(
             taker,
