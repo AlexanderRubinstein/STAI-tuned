@@ -682,6 +682,7 @@ class ChainingIteratorsWrapper:
 
 
 def chain_dataloaders(dataloaders_list, random_order=False):
+    assert len(dataloaders_list) > 1, "Need at least 2 dataloaders to chain"
     return wrap_dataloader(
         dataloaders_list,
         ChainingIteratorsWrapper,
