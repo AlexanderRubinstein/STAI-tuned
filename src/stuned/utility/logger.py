@@ -1594,12 +1594,8 @@ def sync_local_file_with_gdrive(
 
     remote_file = get_gdrive_file_by_url(gdrive_client, remote_url)
 
-    # On Mac "KeyError: 'mimeType'" happens
-    if SYSTEM_PLATFORM != "darwin":
-        assert (
-            get_with_assert(remote_file, "mimeType")
-                in FILE_TYPES_ALLOWED_TO_SYNC
-        )
+    if "mimeType" in remote_file:
+        assert remote_file["mimeType"] in FILE_TYPES_ALLOWED_TO_SYNC
 
     if download:
         remote_file.GetContentFile(local_filepath)
