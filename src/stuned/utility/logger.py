@@ -194,6 +194,10 @@ DAEMON_SLEEP_TIME = 20
 TIME_TO_LOSE_LOCK_IF_CONCURRENT = 0.1
 
 
+if SYSTEM_PLATFORM == "darwin":
+    mp.set_start_method('fork')
+
+
 def make_string_style(
     text_style,
     text_color
@@ -258,6 +262,7 @@ class RedneckLogger(BaseLogger):
         self.wandb_run = None
         self.wandb_api = None
         self.gspread_client = None
+        self.gdrive_client = None
 
         # gdrive logs sync
         self.gdrive_storage_folder_url = None
@@ -288,13 +293,18 @@ class RedneckLogger(BaseLogger):
         self.stdout_lock = make_file_lock(self.stdout_file)
         self.stderr_lock = make_file_lock(self.stderr_file)
 
+    def get_gdrive_client(self):
+        if self.gdrive_client is None:
+            self.gdrive_client = make_gdrive_client(self)
+        return self.gdrive_client
+
     def create_logs_on_gdrive(self, gdrive_storage_folder_url):
 
         assert self.output_folder
 
         self.gdrive_storage_folder_url = gdrive_storage_folder_url
 
-        gdrive_client = make_gdrive_client(self)
+        gdrive_client = self.get_gdrive_client()
 
         remote_run_folder = gdrive_client.create_node(
             os.path.basename(self.output_folder),
@@ -328,12 +338,11 @@ class RedneckLogger(BaseLogger):
 
         def daemon_task(logger, sync_time):
 
-            gdrive_client = make_gdrive_client(logger)
             daemon_process = psutil.Process(os.getpid())
 
             while True:
                 if daemon_process.parent() is not None:
-                    sync_output_with_remote(gdrive_client, logger)
+                    sync_output_with_remote(logger)
 
                     time.sleep(sync_time)
 
@@ -603,10 +612,10 @@ class RedneckLogger(BaseLogger):
         if self.gdrive_daemon:
             self.gdrive_daemon.terminate()
             self.gdrive_daemon.join()
-            sync_output_with_remote(make_gdrive_client(self), self)
+            sync_output_with_remote(self)
 
 
-def sync_output_with_remote(gdrive_client, logger):
+def sync_output_with_remote(logger):
 
     assert logger.stdout_file
     assert logger.stderr_file
@@ -614,6 +623,8 @@ def sync_output_with_remote(gdrive_client, logger):
     assert logger.remote_stderr_url
     assert logger.stdout_lock
     assert logger.stderr_lock
+
+    gdrive_client = logger.get_gdrive_client()
 
     with (
         NamedTemporaryFile('w+t', newline='') as tmp_file
@@ -1583,7 +1594,12 @@ def sync_local_file_with_gdrive(
 
     remote_file = get_gdrive_file_by_url(gdrive_client, remote_url)
 
-    assert remote_file["mimeType"] in FILE_TYPES_ALLOWED_TO_SYNC
+    # On Mac "KeyError: 'mimeType'" happens
+    if SYSTEM_PLATFORM != "darwin":
+        assert (
+            get_with_assert(remote_file, "mimeType")
+                in FILE_TYPES_ALLOWED_TO_SYNC
+        )
 
     if download:
         remote_file.GetContentFile(local_filepath)

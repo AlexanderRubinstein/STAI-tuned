@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
+SYSTEM_PLATFORM = platform.system().lower()
 DEFAULT_HASH_SIZE = 10
 DEFAULT_EXPERIMENTS_FOLDER = "experiments"
 PROFILER_GROUP_BY_STACK_N = 5
@@ -39,7 +40,14 @@ DEFAULT_FILE_CHUNK_SIZE = 4096
 EMPTY_CSV_TOKEN = "?"
 DEFAULT_ENV_NAME = os.environ["DEFAULT_ENV"]
 TEST_ENV_NAME = os.environ["TEST_ENV"]
-BASHRC_PATH = os.path.join(os.environ["HOME"], ".bashrc")
+BASHRC_PATH = os.path.join(
+    os.environ["HOME"],
+    (
+        ".zshrc"
+            if SYSTEM_PLATFORM == "darwin" else
+        ".bashrc"
+    )
+)
 NEW_SHELL_INIT_COMMAND = "source {} && conda activate".format(BASHRC_PATH)
 FLOATING_POINT = "."
 NAME_SEP = "_"
@@ -54,9 +62,6 @@ MAX_RETRIES_ERROR_MSG = "Maximum number of retries failed."
 
 
 DEFAULT_INDENT_IN_JSON = 2
-
-
-SYSTEM_PLATFORM = platform.system().lower()
 
 
 LIST_START_SYMBOL = '['
