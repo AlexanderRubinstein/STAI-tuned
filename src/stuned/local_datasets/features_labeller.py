@@ -15,7 +15,9 @@ from utility.utils import (
     log_or_print,
     range_for_each_group,
     deterministic_subset,
-    compute_proportion
+    compute_proportion,
+    get_with_assert,
+    invert_dict
 )
 from local_datasets.dsprites import (
     make_dsprites_base_data,
@@ -44,6 +46,7 @@ class FeaturesLabeller:
         features_list,
         classes_per_feature,
         num_samples_per_cell=None,
+        manual_values_per_class={},
         logger=make_logger()
     ):
         '''
@@ -104,6 +107,7 @@ class FeaturesLabeller:
         self.num_samples_per_cell = get_num_samples_per_cell(
             num_samples_per_cell
         )
+        self.manual_values_per_class = manual_values_per_class
         for split in ["train", "test"]:
             (
                 self.indices_for_classes[split],
@@ -199,7 +203,8 @@ class FeaturesLabeller:
 
             indices_for_classes_for_split_per_dataset \
                 = self._merge_values_in_classes(
-                    indices_for_feature_values_for_split[feature]
+                    indices_for_feature_values_for_split,
+                    feature
                 )
 
             result[off_diag_name] = indices_for_classes_for_split_per_dataset
@@ -324,31 +329,53 @@ class FeaturesLabeller:
                 ]
             )
 
-    def _merge_values_in_classes(self, indices_for_values):
+    def _merge_values_in_classes(self, indices_for_values, feature):
 
-        def compute_num_values_per_class(num_classes, total_values):
+        def compute_values_per_class(num_classes, total_values):
             assert total_values >= num_classes
-            return [
-                group_range[1] - group_range[0]
-                    for group_range
-                    in range_for_each_group(num_classes, total_values)
-            ]
+            return {
+                class_id: list(range(values_range[0], values_range[1]))
+                    for class_id, values_range
+                        in enumerate(
+                            range_for_each_group(num_classes, total_values)
+                        )
+            }
 
-        values_per_class = compute_num_values_per_class(
-            self.classes_per_feature,
-            len(indices_for_values)
+        indices_for_values_per_feature = get_with_assert(
+            indices_for_values,
+            feature
         )
 
-        merged_indices = []
-        indices_to_merge = []
+        if feature in self.manual_values_per_class:
+            values_per_class = self.manual_values_per_class[feature]
 
-        class_idx = 0
-        for indices_for_value in indices_for_values:
-            indices_to_merge.append(indices_for_value)
-            if len(indices_to_merge) == values_per_class[class_idx]:
-                merged_indices.append(set.union(*indices_to_merge))
-                indices_to_merge = []
-                class_idx += 1
+        else:
+            values_per_class = compute_values_per_class(
+                self.classes_per_feature,
+                len(indices_for_values_per_feature)
+            )
+
+        value_to_class = invert_dict(values_per_class)
+        assert len(value_to_class) == len(indices_for_values_per_feature), \
+            (f"When using manual_values_per_class, the following values "
+            f"for {feature} are not "
+            "assigned to classes: {}".format(
+                set(
+                    range(len(indices_for_values_per_feature))
+                ).difference(
+                    set(value_to_class.keys())
+                )
+            ))
+
+        merged_indices = [set()] * self.classes_per_feature
+
+        for value_id, indices_for_value in enumerate(
+            indices_for_values_per_feature
+        ):
+            class_id = value_to_class[value_id]
+            merged_indices[class_id] = merged_indices[class_id].union(
+                indices_for_value
+            )
 
         return merged_indices
 
@@ -636,6 +663,8 @@ def make_features_labeller(
         features_labeller_config["features_list"],
         features_labeller_config["num_classes_per_feature"],
         features_labeller_config["num_samples_per_cell"],
+        manual_values_per_class
+            =features_labeller_config.get("manual_values_per_class", {}),
         logger=logger
     )
 

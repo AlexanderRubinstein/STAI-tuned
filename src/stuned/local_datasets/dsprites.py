@@ -349,6 +349,12 @@ class BaseDataDSprites(BaseData):
             assert isinstance(self.pruned_indices, set)
 
         self.transform = transform
+        features_sizes = np.array(
+            [
+                len(possible_features_values[feature])
+                    for feature in possible_features
+            ]
+        )
 
         super(BaseDataDSprites, self).__init__(
             possible_features,

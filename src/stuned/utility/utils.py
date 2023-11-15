@@ -21,6 +21,7 @@ import signal
 import platform
 import sys
 from collections import Counter
+from collections.abc import Iterable
 import itertools
 import contextlib
 from watchdog.observers import Observer
@@ -1921,3 +1922,13 @@ def add_custom_properties(giver, taker, only_local=True):
             custom_property,
             getattr(giver, custom_property)
         )
+
+
+def invert_dict(d):
+    res = {}
+    for key, container in d.items():
+        assert isinstance(container, Iterable)
+        for value in container:
+            assert value not in res, f"Dict is not invertible: {d}"
+            res[value] = key
+    return res
