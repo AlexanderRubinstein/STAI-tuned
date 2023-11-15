@@ -32,7 +32,14 @@ def get_dataloaders_from_folder(
                 f"\nsplits: {splits}"
 
     def clean_splits(splits):
-        assert sum(splits.values()) == 1, \
+        sum_of_splits = sum(splits.values())
+        assert sum_of_splits >= 0 and sum_of_splits <= 1, \
+            "Sum of splits for \"from_folder\" dataset should be in [0, 1] range"
+        for split_name, split_size in splits.items():
+            if split_size is None:
+                splits[split_name] = 1 - sum_of_splits
+                sum_of_splits = 1
+        assert sum_of_splits == 1, \
             "Splits for \"from_folder\" dataset do not sum up to one"
         splits_to_pop = []
         for split_name, split_size in splits.items():
