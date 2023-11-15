@@ -104,7 +104,7 @@ def find_nested_keys_by_keyword_in_config(
                 config[key],
                 keyword=keyword,
                 separator=separator,
-                prefix=prefix+key+separator
+                prefix=str(prefix)+str(key)+str(separator)
             )
             res.extend(subpaths)
         return res
