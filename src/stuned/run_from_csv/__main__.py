@@ -325,7 +325,7 @@ def process_csv_row(
     final_cmd = None
 
     whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
-
+    print(csv_row)
     if (
         is_number(whether_to_run)
             and int(whether_to_run) != 0
@@ -489,7 +489,7 @@ def make_new_config(
         list_end_symbol=']'
     )
 
-    deltas["logging/output_csv"] = make_csv_config(
+    deltas[f"logging{NESTED_CONFIG_KEY_SEPARATOR}output_csv"] = make_csv_config(
         input_csv_path,
         row_number,
         spreadsheet_url,

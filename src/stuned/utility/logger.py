@@ -1470,15 +1470,13 @@ def init_wandb_run(
     settings = None
     if SYSTEM_PLATFORM == "linux":
         settings = wandb.Settings(start_method="fork")
-    wandb_init_kwargs = wandb_config.get("wandb_init_kwargs", {})
-    if PROJECT_KEY not in wandb_init_kwargs:
-        wandb_init_kwargs[PROJECT_KEY] = exp_name
     run = wandb.init(
+        entity=wandb_config["entity"],
+        project=wandb_config["project"],
         dir=wandb_dir,
         settings=settings,
         sync_tensorboard=wandb_config.get("sync_tb", False),
         config=config,
-        **wandb_init_kwargs
     )
     api = wandb.Api(api_key=wandb_password).run(run.path)
     return run, api
