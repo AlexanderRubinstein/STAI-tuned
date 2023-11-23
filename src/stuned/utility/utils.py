@@ -4,7 +4,6 @@ import torch
 import numpy as np
 import random
 import os
-import yaml
 from datetime import datetime, timedelta
 import subprocess
 from deepdiff import DeepDiff, model as dd_model
@@ -114,16 +113,16 @@ def read_yaml(yaml_file):
     with open(yaml_file, 'r') as stream:
         return yaml.safe_load(stream)
 
-def apply_random_seed(random_seed):
-    random.seed(random_seed)
-    np.random.seed(random_seed)
-    torch.manual_seed(random_seed)
-    torch.cuda.manual_seed(random_seed)
-    torch.cuda.manual_seed_all(random_seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # to suppress warning
-    torch.use_deterministic_algorithms(True, warn_only=True)
+# def apply_random_seed(random_seed):
+#     random.seed(random_seed)
+#     np.random.seed(random_seed)
+#     torch.manual_seed(random_seed)
+#     torch.cuda.manual_seed(random_seed)
+#     torch.cuda.manual_seed_all(random_seed)
+#     torch.backends.cudnn.benchmark = False
+#     torch.backends.cudnn.deterministic = True
+#     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"  # to suppress warning
+#     torch.use_deterministic_algorithms(True, warn_only=True)
 
 
 def get_current_time():
@@ -277,46 +276,46 @@ def compute_dicts_diff(dict1, dict2, ignore_order=True):
     return ddiff
 
 
-def randomly_subsample_indices_uniformly(total_samples, num_to_subsample):
-    weights = torch.tensor(
-        total_samples * [1.0 / total_samples], dtype=torch.float
-    )
-    return torch.multinomial(weights, num_to_subsample)
+# def randomly_subsample_indices_uniformly(total_samples, num_to_subsample):
+#     weights = torch.tensor(
+#         total_samples * [1.0 / total_samples], dtype=torch.float
+#     )
+#     return torch.multinomial(weights, num_to_subsample)
 
 
-def deterministically_subsample_indices_uniformly(
-    total_samples,
-    num_to_subsample
-):
-    assert num_to_subsample <= total_samples, \
-        "Try to subsample more samples than exist."
-    return torch.linspace(
-        0,
-        total_samples - 1,
-        num_to_subsample,
-        dtype=torch.int
-    )
+# def deterministically_subsample_indices_uniformly(
+#     total_samples,
+#     num_to_subsample
+# ):
+#     assert num_to_subsample <= total_samples, \
+#         "Try to subsample more samples than exist."
+#     return torch.linspace(
+#         0,
+#         total_samples - 1,
+#         num_to_subsample,
+#         dtype=torch.int
+#     )
 
 
-def get_device(use_gpu, idx=0):
-    if use_gpu:
-        if torch.cuda.is_available():
-            return torch.device("cuda:{}".format(idx))
-        else:
-            raise Exception("Cuda is not available.")
-    else:
-        return torch.device("cpu")
-
-def get_cuda_gpu_model():
-    try:
-        # This command queries the GPU name using nvidia-smi
-        output = subprocess.check_output(["nvidia-smi", "--query-gpu=gpu_name", "--format=csv,noheader,nounits"]).decode("utf-8").strip()
-        if output:
-            return output
-        else:
-            return None
-    except:
-        return None
+# def get_device(use_gpu, idx=0):
+#     if use_gpu:
+#         if torch.cuda.is_available():
+#             return torch.device("cuda:{}".format(idx))
+#         else:
+#             raise Exception("Cuda is not available.")
+#     else:
+#         return torch.device("cpu")
+#
+# def get_cuda_gpu_model():
+#     try:
+#         # This command queries the GPU name using nvidia-smi
+#         output = subprocess.check_output(["nvidia-smi", "--query-gpu=gpu_name", "--format=csv,noheader,nounits"]).decode("utf-8").strip()
+#         if output:
+#             return output
+#         else:
+#             return None
+#     except:
+#         return None
 
 def get_gpu_info():
     gpu_info = ""

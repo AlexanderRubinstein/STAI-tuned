@@ -24,7 +24,7 @@ def demo_experiment(
 ):
     image_size = experiment_config["image"]["shape"]
 
-    colored_image = torch.zeros((3, *image_size))
+    # colored_image = torch.zeros((3, *image_size))
 
     if experiment_config["image"]["color"] == "red":
         channel = 0
