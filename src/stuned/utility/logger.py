@@ -50,7 +50,7 @@ from .message_client import MessageClient, MessageType
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # suppress tf warning
 import shutil
-import torch
+# import torch
 import sys
 import traceback
 import wandb  # slow
@@ -552,10 +552,10 @@ def update_and_move_logger_output_folder(logger, new_output_folder, require_old_
     logger.update_output_folder(new_output_folder)
 
 
-def store_profiler_results(logger, profiler):
-    logger.store(
-        "profiler_results", extract_profiler_results(profiler) + torch.cuda.memory_summary()
-    )
+# def store_profiler_results(logger, profiler):
+#     logger.store(
+#         "profiler_results", extract_profiler_results(profiler) + torch.cuda.memory_summary()
+#     )
 
 
 def dump_profiler_results(logger):

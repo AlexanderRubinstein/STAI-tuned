@@ -2,7 +2,8 @@ import random
 import sys
 from time import sleep
 
-import torch
+import numpy as np
+# import torch
 import wandb
 
 from stuned.utility.helpers_for_main import prepare_wrapper_for_experiment
@@ -22,7 +23,7 @@ def demo_experiment(
 ):
     image_size = experiment_config["image"]["shape"]
 
-    colored_image = torch.zeros((3, *image_size))
+    colored_image = np.zeros((3, *image_size))
 
     if experiment_config["image"]["color"] == "red":
         channel = 0
@@ -40,9 +41,9 @@ def demo_experiment(
     try_to_log_in_csv(logger, "color_required", experiment_config["image"]["color"])
     for i in range(10):
         if init_type == "random":
-            colored_image[channel] = torch.randn(image_size)
+            colored_image[channel] = np.randn(image_size)
         else:
-            colored_image[channel] = torch.ones(image_size)
+            colored_image[channel] = np.ones(image_size)
 
         mean = colored_image.mean()
 

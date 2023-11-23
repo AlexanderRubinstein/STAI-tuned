@@ -1,6 +1,6 @@
 import warnings
 import ast
-import torch
+# import torch
 import numpy as np
 import random
 import os
@@ -320,28 +320,28 @@ def compute_dicts_diff(dict1, dict2, ignore_order=True):
 def get_gpu_info():
     gpu_info = ""
     return "?"
-    if torch.cuda.is_available():
-        gpu_info = torch.cuda.get_device_name(0)
-        # see if we can use it?
-        try:
-            tns = torch.randn(1, 1).cuda()
-        except:
-            gpu_info = gpu_info + " (not usable)"
-    else:
-        gpu_info = "no-gpu"
-    return gpu_info
+    # if torch.cuda.is_available():
+    #     gpu_info = torch.cuda.get_device_name(0)
+    #     # see if we can use it?
+    #     try:
+    #         tns = torch.randn(1, 1).cuda()
+    #     except:
+    #         gpu_info = gpu_info + " (not usable)"
+    # else:
+    #     gpu_info = "no-gpu"
+    # return gpu_info
         
 def get_cpu_cores():
     return repr(len(os.sched_getaffinity(0)))
-
-def get_model_device(model):
-
-    # if timm model
-    if hasattr(model, "blocks"):
-        model = model.blocks
-
-    assert isinstance(model, torch.nn.Module)
-    return next(model.parameters()).device
+#
+# def get_model_device(model):
+#
+#     # if timm model
+#     if hasattr(model, "blocks"):
+#         model = model.blocks
+#
+#     assert isinstance(model, torch.nn.Module)
+#     return next(model.parameters()).device
 
 
 def get_project_root_path():
@@ -417,48 +417,48 @@ def error_or_print(msg, logger=None, auto_newline=False):
         print(msg, file=sys.stderr, flush=True)
 
 
-def read_checkpoint(checkpoint_path, map_location=None):
-
-    class CPU_Unpickler(pickle.Unpickler):
-        def find_class(self, module, name):
-            if module == 'torch.storage' and name == '_load_from_bytes':
-                return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
-            else: return super().find_class(module, name)
-
-    def do_read_checkpoint(file, map_location=None):
-
-        if map_location == "cpu" or map_location == torch.device(type='cpu'):
-            checkpoint = CPU_Unpickler(file).load()
-        else:
-            try:
-                checkpoint = torch.load(
-                    file,
-                    map_location=map_location
-                )
-            except:
-                checkpoint = pickle.load(file)
-
-        return checkpoint
-
-    if os.path.exists(checkpoint_path):
-        file = open(checkpoint_path, "rb")
-        try:
-            checkpoint = do_read_checkpoint(
-                file,
-                map_location=map_location
-            )
-        except RuntimeError:
-            checkpoint = do_read_checkpoint(
-                file,
-                map_location='cpu'
-            )
-    else:
-        raise Exception(
-            "Checkpoint path does not exist: {}".format(checkpoint_path)
-        )
-    for obj in checkpoint.values():
-        prepare_for_unpickling(obj)
-    return checkpoint
+# def read_checkpoint(checkpoint_path, map_location=None):
+#
+#     class CPU_Unpickler(pickle.Unpickler):
+#         def find_class(self, module, name):
+#             if module == 'torch.storage' and name == '_load_from_bytes':
+#                 return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
+#             else: return super().find_class(module, name)
+#
+#     def do_read_checkpoint(file, map_location=None):
+#
+#         if map_location == "cpu" or map_location == torch.device(type='cpu'):
+#             checkpoint = CPU_Unpickler(file).load()
+#         else:
+#             try:
+#                 checkpoint = torch.load(
+#                     file,
+#                     map_location=map_location
+#                 )
+#             except:
+#                 checkpoint = pickle.load(file)
+#
+#         return checkpoint
+#
+#     if os.path.exists(checkpoint_path):
+#         file = open(checkpoint_path, "rb")
+#         try:
+#             checkpoint = do_read_checkpoint(
+#                 file,
+#                 map_location=map_location
+#             )
+#         except RuntimeError:
+#             checkpoint = do_read_checkpoint(
+#                 file,
+#                 map_location='cpu'
+#             )
+#     else:
+#         raise Exception(
+#             "Checkpoint path does not exist: {}".format(checkpoint_path)
+#         )
+#     for obj in checkpoint.values():
+#         prepare_for_unpickling(obj)
+#     return checkpoint
 
 
 def save_checkpoint(
@@ -1227,45 +1227,45 @@ def is_number(x):
     return str_is_number(str(x))
 
 
-def assert_two_values_are_close(value_1, value_2, **isclose_kwargs):
-
-    def assert_info(value_1, value_2):
-        return "value 1: {}\n\nvalue 2: {}".format(value_1, value_2)
-
-    def assert_is_close(value_1, value_2, isclose_func, **isclose_kwargs):
-        assert isclose_func(value_1, value_2, **isclose_kwargs).all(), \
-            assert_info(value_1, value_2)
-
-    if value_1 is None:
-        assert value_2 is None
-
-    if not (is_number(value_1) and is_number(value_2)):
-        value_1_type = type(value_1)
-        value_2_type = type(value_2)
-        assert value_1_type == value_2_type, \
-            assert_info(value_1_type, value_2_type)
-
-    if isinstance(value_1, (list, tuple, dict)):
-        assert len(value_1) == len(value_2), assert_info(value_1, value_2)
-        if isinstance(value_1, dict):
-            iterable = zip(
-                sorted(value_1.items(), key=(lambda x: x[0])),
-                sorted(value_2.items(), key=(lambda x: x[0]))
-            )
-        else:
-            iterable = zip(value_1, value_2)
-        for subvalue_1, subvalue_2 in iterable:
-            assert_two_values_are_close(
-                subvalue_1,
-                subvalue_2,
-                **isclose_kwargs
-            )
-    elif isinstance(value_1, np.ndarray):
-        assert_is_close(value_1, value_2, np.isclose, **isclose_kwargs)
-    elif torch.is_tensor(value_1):
-        assert_is_close(value_1, value_2, torch.isclose, **isclose_kwargs)
-    else:
-        assert value_1 == value_2, assert_info(value_1, value_2)
+# def assert_two_values_are_close(value_1, value_2, **isclose_kwargs):
+#
+#     def assert_info(value_1, value_2):
+#         return "value 1: {}\n\nvalue 2: {}".format(value_1, value_2)
+#
+#     def assert_is_close(value_1, value_2, isclose_func, **isclose_kwargs):
+#         assert isclose_func(value_1, value_2, **isclose_kwargs).all(), \
+#             assert_info(value_1, value_2)
+#
+#     if value_1 is None:
+#         assert value_2 is None
+#
+#     if not (is_number(value_1) and is_number(value_2)):
+#         value_1_type = type(value_1)
+#         value_2_type = type(value_2)
+#         assert value_1_type == value_2_type, \
+#             assert_info(value_1_type, value_2_type)
+#
+#     if isinstance(value_1, (list, tuple, dict)):
+#         assert len(value_1) == len(value_2), assert_info(value_1, value_2)
+#         if isinstance(value_1, dict):
+#             iterable = zip(
+#                 sorted(value_1.items(), key=(lambda x: x[0])),
+#                 sorted(value_2.items(), key=(lambda x: x[0]))
+#             )
+#         else:
+#             iterable = zip(value_1, value_2)
+#         for subvalue_1, subvalue_2 in iterable:
+#             assert_two_values_are_close(
+#                 subvalue_1,
+#                 subvalue_2,
+#                 **isclose_kwargs
+#             )
+#     elif isinstance(value_1, np.ndarray):
+#         assert_is_close(value_1, value_2, np.isclose, **isclose_kwargs)
+#     elif torch.is_tensor(value_1):
+#         assert_is_close(value_1, value_2, torch.isclose, **isclose_kwargs)
+#     else:
+#         assert value_1 == value_2, assert_info(value_1, value_2)
 
 
 def bootstrap_by_key_subname(input_dict, subname_to_bootstrap):
@@ -1426,10 +1426,10 @@ def touch_file(file_path):
     return file_path
 
 
-def cat_or_assign(accumulating_tensor, new_tensor):
-    if accumulating_tensor is None:
-        return new_tensor
-    return torch.cat((accumulating_tensor, new_tensor))
+# def cat_or_assign(accumulating_tensor, new_tensor):
+#     if accumulating_tensor is None:
+#         return new_tensor
+#     return torch.cat((accumulating_tensor, new_tensor))
 
 
 def kill_processes(processes_to_kill, logger=None):
@@ -1443,19 +1443,19 @@ def kill_processes(processes_to_kill, logger=None):
             error_or_print(traceback.format_exc(), logger)
 
 
-def read_old_checkpoint(checkpoint_path, map_location=None):
-    sys.path.insert(
-        0,
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "train_eval")
-    )
-    checkpoint = read_checkpoint(checkpoint_path, map_location=map_location)
-    sys.path.pop(0)
-    return checkpoint
+# def read_old_checkpoint(checkpoint_path, map_location=None):
+#     sys.path.insert(
+#         0,
+#         os.path.join(os.path.dirname(os.path.dirname(__file__)), "train_eval")
+#     )
+#     checkpoint = read_checkpoint(checkpoint_path, map_location=map_location)
+#     sys.path.pop(0)
+#     return checkpoint
 
 
-def read_model_from_old_checkpoint(path):
-    checkpoint = read_old_checkpoint(path)
-    return checkpoint["model"]
+# def read_model_from_old_checkpoint(path):
+#     checkpoint = read_old_checkpoint(path)
+#     return checkpoint["model"]
 
 
 def make_file_lock(file_name):
@@ -1841,15 +1841,15 @@ def get_cmap(image):
     return cmap
 
 
-def compute_tensor_cumsums(tensor):
-    result = []
-    for dim_i in range(len(tensor.shape)):
-        result.append(torch.linalg.norm(torch.cumsum(tensor, dim=dim_i)))
-    return result
+# def compute_tensor_cumsums(tensor):
+#     result = []
+#     for dim_i in range(len(tensor.shape)):
+#         result.append(torch.linalg.norm(torch.cumsum(tensor, dim=dim_i)))
+#     return result
+#
 
-
-def compute_unique_tensor_value(tensor):
-    return torch.round(TOL * aggregate_tensors_by_func(compute_tensor_cumsums(tensor)))
+# def compute_unique_tensor_value(tensor):
+#     return torch.round(TOL * aggregate_tensors_by_func(compute_tensor_cumsums(tensor)))
 
 
 def prune_list(l, value):
