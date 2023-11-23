@@ -21,7 +21,6 @@ START_TIME_CONFIG_KEY = "start_time"
 RUN_PATH_CONFIG_KEY = "current_run_folder"
 TYPE_KEY = "type"
 ANY_KEY = "any"
-NESTED_CONFIG_KEY_SEPARATOR = '.'
 
 
 def make_csv_config(

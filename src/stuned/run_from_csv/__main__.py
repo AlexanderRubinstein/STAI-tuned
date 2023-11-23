@@ -10,6 +10,10 @@ import multiprocessing as mp
 
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from settings import (
+    NESTED_CONFIG_KEY_SEPARATOR,
+    EMPTY_STRING,
+)
 from utility.utils import (
     DEFAULT_ENV_NAME,
     NEW_SHELL_INIT_COMMAND,
@@ -67,7 +71,6 @@ DEFAULT_SLURM_ARGS_DICT = {
     "error": DEV_NULL,
     "output": DEV_NULL
 }
-EMPTY_STRING = "--"
 EXPANDED_CSV_PREFIX = "expanded_"
 CURRENT_ROW_PLACEHOLDER = "__ROW__"
 CURRENT_WORKSHEET_PLACEHOLDER = "__WORKSHEET__"
