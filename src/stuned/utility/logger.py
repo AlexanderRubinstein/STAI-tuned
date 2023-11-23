@@ -50,7 +50,7 @@ from .message_client import MessageClient, MessageType
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # suppress tf warning
 import shutil
-# import torch
+import torch
 import sys
 import traceback
 import wandb  # slow
@@ -1669,10 +1669,10 @@ def make_slurm_column_name(name):
     return make_prefixed_column_name(name, SLURM_PREFIX)
 
 
-def log_info(logger, tensor, name):
-    if logger is None:
-        logger = make_logger()
-    logger.log(f"{name} norm: {torch.linalg.norm(tensor)}")
-    cumsums = compute_tensor_cumsums(tensor)
-    for dim_i in range(len(cumsums)):
-        logger.log(f"{name} norm of cumsum for dim: {dim_i}: " f"{cumsums[dim_i]}")
+# def log_info(logger, tensor, name):
+#     if logger is None:
+#         logger = make_logger()
+#     logger.log(f"{name} norm: {torch.linalg.norm(tensor)}")
+#     cumsums = compute_tensor_cumsums(tensor)
+#     for dim_i in range(len(cumsums)):
+#         logger.log(f"{name} norm of cumsum for dim: {dim_i}: " f"{cumsums[dim_i]}")

@@ -28,7 +28,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import io
 import re
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 
 DEFAULT_HASH_SIZE = 10
@@ -1758,12 +1758,12 @@ def check_consistency(
         raise Exception(exception_msg)
 
 
-def aggregate_tensors_by_func(input_list, func=torch.mean):
-    return func(
-        torch.stack(
-            input_list
-        )
-    )
+# def aggregate_tensors_by_func(input_list, func=torch.mean):
+#     return func(
+#         torch.stack(
+#             input_list
+#         )
+#     )
 
 
 def func_for_dim(func, dim):
@@ -1781,64 +1781,64 @@ def parse_name_and_number(name_and_number, separator=NAME_NUMBER_SEPARATOR):
     assert is_number(split[-1])
     return split[0], parse_float_or_int_from_string(split[-1])
 
+#
+# def show_images(images, label_lists=None):
+#
+#     def remove_ticks_and_labels(subplot):
+#         subplot.axes.xaxis.set_ticklabels([])
+#         subplot.axes.yaxis.set_ticklabels([])
+#         subplot.axes.xaxis.set_visible(False)
+#         subplot.axes.yaxis.set_visible(False)
+#
+#     def get_row_cols(n):
+#         n_rows = int(np.sqrt(n))
+#         n_cols = int(n / n_rows)
+#         if n % n_rows != 0:
+#             n_cols += 1
+#         return n_rows, n_cols
+#
+#     n = len(images)
+#     assert n > 0
+#     if label_lists is not None:
+#         for label_list in label_lists.values():
+#             assert len(label_list) == n
+#
+#     n_rows, n_cols = get_row_cols(n)
+#
+#     cmap = get_cmap(images[0])
+#     fig = plt.figure(figsize=(n_cols * PLT_COL_SIZE, n_rows * PLT_ROW_SIZE))
+#     for i in range(n):
+#         subplot = fig.add_subplot(n_rows, n_cols, i + 1)
+#         title = f'n{i}'
+#         if label_lists is not None:
+#             for label_name, label_list in label_lists.items():
+#                 title += f"\n{label_name}=\"{label_list[i]}\""
+#         subplot.title.set_text(title)
+#         remove_ticks_and_labels(subplot)
+#
+#         imshow(subplot, images[i], cmap=cmap)
+#
+#     plt.tight_layout()
+#     plt.show()
+#
+#
+# def imshow(plot, image, cmap=None, color_dim_first=True):
+#     image = image.squeeze()
+#     num_image_dims = len(image.shape)
+#     if cmap is None:
+#         cmap = get_cmap(image)
+#     assert num_image_dims == 2 or num_image_dims == 3
+#     if num_image_dims == 3 and color_dim_first:
+#         image = np.transpose(image, (1, 2, 0))
+#     plot.imshow(image, cmap=cmap)
 
-def show_images(images, label_lists=None):
-
-    def remove_ticks_and_labels(subplot):
-        subplot.axes.xaxis.set_ticklabels([])
-        subplot.axes.yaxis.set_ticklabels([])
-        subplot.axes.xaxis.set_visible(False)
-        subplot.axes.yaxis.set_visible(False)
-
-    def get_row_cols(n):
-        n_rows = int(np.sqrt(n))
-        n_cols = int(n / n_rows)
-        if n % n_rows != 0:
-            n_cols += 1
-        return n_rows, n_cols
-
-    n = len(images)
-    assert n > 0
-    if label_lists is not None:
-        for label_list in label_lists.values():
-            assert len(label_list) == n
-
-    n_rows, n_cols = get_row_cols(n)
-
-    cmap = get_cmap(images[0])
-    fig = plt.figure(figsize=(n_cols * PLT_COL_SIZE, n_rows * PLT_ROW_SIZE))
-    for i in range(n):
-        subplot = fig.add_subplot(n_rows, n_cols, i + 1)
-        title = f'n{i}'
-        if label_lists is not None:
-            for label_name, label_list in label_lists.items():
-                title += f"\n{label_name}=\"{label_list[i]}\""
-        subplot.title.set_text(title)
-        remove_ticks_and_labels(subplot)
-
-        imshow(subplot, images[i], cmap=cmap)
-
-    plt.tight_layout()
-    plt.show()
-
-
-def imshow(plot, image, cmap=None, color_dim_first=True):
-    image = image.squeeze()
-    num_image_dims = len(image.shape)
-    if cmap is None:
-        cmap = get_cmap(image)
-    assert num_image_dims == 2 or num_image_dims == 3
-    if num_image_dims == 3 and color_dim_first:
-        image = np.transpose(image, (1, 2, 0))
-    plot.imshow(image, cmap=cmap)
-
-
-def get_cmap(image):
-    cmap = "viridis"
-    squeezed_shape = image.squeeze().shape
-    if len(squeezed_shape) == 2:
-        cmap = "gray"
-    return cmap
+#
+# def get_cmap(image):
+#     cmap = "viridis"
+#     squeezed_shape = image.squeeze().shape
+#     if len(squeezed_shape) == 2:
+#         cmap = "gray"
+#     return cmap
 
 
 # def compute_tensor_cumsums(tensor):
