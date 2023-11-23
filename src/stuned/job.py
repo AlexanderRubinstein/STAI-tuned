@@ -1,9 +1,7 @@
-
-
-
 from typing import Dict, List
 
 from stuned.utility.message_client import MessageType
+
 
 # Create enum of job status
 class JobStatus:
@@ -14,15 +12,16 @@ class JobStatus:
     CANCELLED = "cancelled"
     TIMEOUT = "timeout"
     UNKNOWN = "unknown"
-    
+
     slurm_submitted_statuses = ["PENDING", "CONFIGURING"]
     slurm_running_statuses = ["RUNNING", "COMPLETING"]
     slurm_failed_statuses = ["FAILED"]
     slurm_timeout_statuses = ["TIMEOUT"]
     slurm_cancelled_statuses = ["CANCELLED", "CANCELLED+"]
     slurm_completed_statuses = ["COMPLETED", "COMPLETED+"]
-    
-def get_slurm_job_status(slurm_status : str) -> str:
+
+
+def get_slurm_job_status(slurm_status: str) -> str:
     # TODO: rewrite this as a dict check xD
     if slurm_status in JobStatus.slurm_running_statuses:
         job_status = JobStatus.RUNNING
@@ -39,7 +38,7 @@ def get_slurm_job_status(slurm_status : str) -> str:
     else:
         job_status = JobStatus.UNKNOWN + "_" + slurm_status
     return job_status
-    
+
 
 class Job:
     def __init__(self, job_id, job_status, job_exit_code, csv_row_id):
@@ -47,28 +46,28 @@ class Job:
         self.job_status = job_status
         self.job_exit_code = job_exit_code
         self.csv_row_id = csv_row_id
-        
+
         self.updated = True
-        
+
         self.writing_queue = []
-    
+
     def set_job_id(self, job_id):
         self.job_id = job_id
-    
+
     def set_job_status(self, job_status):
         self.job_status = job_status
-        
+
     def set_exit_code(self, job_exit_code):
         self.job_exit_code = job_exit_code
-        
-    def process_message(self, message : List[Dict]):
+
+    def process_message(self, message: List[Dict]):
         for message in message["messages"]:
             assert "type" in message, "Message type not found"
             assert "key" in message, "Message key not found"
             assert "value" in message, "Message value not found"
-            
+
             msg_type, msg_key, msg_value = message["type"], message["key"], message["value"]
-            
+
             if msg_type == MessageType.JOB_STARTED:
                 # Simply change the status of the job
                 self.set_job_status(JobStatus.RUNNING)
@@ -76,15 +75,16 @@ class Job:
                 # Write to queue
                 self.writing_queue.append((msg_key, msg_value))
             self.updated = True
-            
-    
-def find_job_idx(jobs : List[Job], job_id : int) -> int:
+
+
+def find_job_idx(jobs: List[Job], job_id: int) -> int:
     for idx, job in enumerate(jobs):
         if job.job_id == job_id:
             return idx
     return None
 
-def find_job_id_by_row_id(jobs : List[Job], row_id : int) -> Job:
+
+def find_job_id_by_row_id(jobs: List[Job], row_id: int) -> Job:
     for idx, job in enumerate(jobs):
         if job.csv_row_id == row_id:
             return idx
