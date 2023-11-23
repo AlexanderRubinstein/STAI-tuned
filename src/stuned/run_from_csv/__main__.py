@@ -32,7 +32,6 @@ from utility.utils import (
 )
 from utility.configs import (
     AUTOGEN_PREFIX,
-    NESTED_CONFIG_KEY_SEPARATOR,
     make_csv_config
 )
 from utility.logger import (
