@@ -101,7 +101,6 @@ from .utils import (
     remove_file_or_folder,
     log_or_print,
     get_project_root_path,
-    compute_tensor_cumsums,
     itself_and_lower_upper_case,
     get_with_assert,
     current_time_formatted,
@@ -1286,13 +1285,15 @@ class GspreadClient:
 
                 # read in a safe way
                 csv_file_as_list = []
-                with open(csv_file_path, 'r') as csv_file:
+                with open(csv_file_path, "r") as csv_file:
                     csv_reader = csv.reader(csv_file)
                     try:
                         for line_number, row in enumerate(csv_reader, start=1):
                             csv_file_as_list.append(row)
                     except csv.Error as e:
-                        raise ValueError(f"CSV error in file {csv_file_path} on line {line_number}: {e}")
+                        raise ValueError(
+                            f"CSV error in file {csv_file_path} on line {line_number}: {e}"
+                        )
 
                 if single_rows_per_csv and single_rows_per_csv[i]:
                     # Get the sheetId for the worksheet
@@ -1577,7 +1578,13 @@ def log_csv_for_concurrent(csv_path, row_col_value_triplets):
             row_col_value_triplets_clean.append((csv_row_number, column_name, value))
 
             write_into_csv_with_column_names(
-                csv_path, csv_row_number, column_name, value, replace_nulls=True, use_lock=False, lock_to_use = lock
+                csv_path,
+                csv_row_number,
+                column_name,
+                value,
+                replace_nulls=True,
+                use_lock=False,
+                lock_to_use=lock,
             )
     time.sleep(TIME_TO_LOSE_LOCK_IF_CONCURRENT)
 
