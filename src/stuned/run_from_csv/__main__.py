@@ -327,7 +327,6 @@ def process_csv_row(
     final_cmd = None
 
     whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
-    print(csv_row)
     if (
         is_number(whether_to_run)
             and int(whether_to_run) != 0
