@@ -40,7 +40,8 @@ from utility.utils import (
     compute_proportion,
     add_custom_properties,
     raise_unknown,
-    get_with_assert
+    get_with_assert,
+    load_from_pickle
 )
 from utility.imports import (
     FROM_CLASS_KEY,
@@ -62,6 +63,9 @@ H5_EXTENSION = ".h5"
 
 TRAIN_KEY = "train"
 VAL_KEY = "val"
+
+
+SCALING_FACTOR = 255
 
 
 class DatasetWrapperWithTransforms(torch.utils.data.Dataset):
@@ -96,7 +100,7 @@ def fetch_data(
     dataset_path,
     assert_folder_func,
     do_fetch_data_func,
-    logger=make_logger(),
+    logger=None,
     dataset_path_is_folder=True
 ):
     """
@@ -106,15 +110,18 @@ def fetch_data(
         os.path.basename(dataset_path),
         must_have_extension=False
     )
-    logger.log(
-        "Verifying \"{}\" dataset..".format(dataset_name)
+    log_or_print(
+        "Verifying \"{}\" dataset..".format(dataset_name),
+        logger=logger,
+        auto_newline=True
     )
     if not assert_folder_func(dataset_path):
-        logger.log(
+        log_or_print(
             "Could not verify \"{}\" dataset in {}".format(
                 dataset_name,
                 dataset_path
             ),
+            logger=logger,
             auto_newline=True
         )
         if os.path.exists(dataset_path):
@@ -122,11 +129,13 @@ def fetch_data(
                 = "folder" \
                     if dataset_path_is_folder \
                     else "file"
-            logger.log(
+            log_or_print(
                 "Removing existing {} {}..".format(
                     object_type,
                     dataset_path
-                )
+                ),
+                logger=logger,
+                auto_newline=True
             )
             remove_file_or_folder(dataset_path)
         os.makedirs(
@@ -140,12 +149,13 @@ def fetch_data(
             dataset_path,
             logger=logger
         )
-        logger.log(
+        log_or_print(
             "Verifying \"{}\" dataset "
             "downloaded into {}..".format(
                 dataset_name,
                 dataset_path
             ),
+            logger=logger,
             auto_newline=True
         )
         if not assert_folder_func(dataset_path):
@@ -153,11 +163,12 @@ def fetch_data(
                 "Downloaded data is not what was expected."
             )
     else:
-        logger.log(
+        log_or_print(
             "\"{}\" is already in {}!".format(
                 dataset_name,
                 dataset_path
             ),
+            logger=logger,
             auto_newline=True
         )
 
@@ -236,14 +247,14 @@ def download_file_by_yadisk_link(sharing_link, filename):
         )
 
 
-def assert_dataset_as_file(file_hash):
+def assert_dataset_as_file(file_hash, check_file_hash=CHECK_FILE_HASH):
 
     def assert_file_by_hash(dataset_path):
 
         path_exists = os.path.exists(dataset_path)
 
         file_hash_is_correct = True
-        if path_exists and CHECK_FILE_HASH:
+        if path_exists and check_file_hash:
             file_hash_is_correct \
                 = (compute_file_hash(dataset_path) == file_hash)
 
@@ -349,8 +360,7 @@ def get_dataloader_init_args_from_existing_dataloader(
 
 
 def default_pickle_load(path):
-    return pickle.load(open(path, "rb"))
-
+    return load_from_pickle(path)
 
 def make_or_load_from_cache(
     object_name,
@@ -714,3 +724,40 @@ def make_sampler(data_source, sampler_config):
         return make_from_class_ctor(specific_sampler_config, [data_source])
     else:
         raise_unknown("sampler type", sampler_type, "sampler config")
+
+
+def get_base_dataset(
+    base_data_config,
+    dataset_filename,
+    get_dataset_hash,
+    get_dataset_url,
+    read_dataset,
+    check_file_hash=CHECK_FILE_HASH,
+    logger=None
+):
+
+    assert '.' in dataset_filename
+    dataset_name, _ = dataset_filename.split('.')
+
+    log_or_print(f"Making base_data for {dataset_name}..", logger=logger)
+    dataset_path = os.path.join(
+        get_with_assert(base_data_config, "path"),
+        dataset_filename
+    )
+    fetch_data(
+        dataset_path=dataset_path,
+        assert_folder_func=assert_dataset_as_file(
+            get_dataset_hash(dataset_name),
+            check_file_hash=check_file_hash
+        ),
+        do_fetch_data_func=do_fetch_dataset_as_file(
+            get_dataset_url(dataset_name)
+        ),
+        logger=logger,
+        dataset_path_is_folder=False
+    )
+    dataset = read_dataset(
+        filename=dataset_path
+    )
+
+    return dataset

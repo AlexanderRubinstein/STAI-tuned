@@ -1924,11 +1924,17 @@ def add_custom_properties(giver, taker, only_local=True):
         )
 
 
-def invert_dict(d):
+def invert_dict(d, none_to_string=False):
     res = {}
     for key, container in d.items():
         assert isinstance(container, Iterable)
         for value in container:
+            if none_to_string and value is None:
+                value = "None"
             assert value not in res, f"Dict is not invertible: {d}"
             res[value] = key
     return res
+
+
+def load_from_pickle(path):
+    return pickle.load(open(path, "rb"))
