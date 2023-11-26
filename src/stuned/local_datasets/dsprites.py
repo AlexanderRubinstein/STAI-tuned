@@ -13,23 +13,25 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from local_datasets.utils import (
     EMPTY_URL,
-    fetch_data,
-    assert_dataset_as_file,
-    do_fetch_dataset_as_file,
     convert_dataset_to_tensor_generator,
+    get_base_dataset,
     make_or_load_from_cache
 )
-from local_datasets.base import BaseData
+from local_datasets.base import (
+    BaseData,
+    ContainerDataset,
+    make_index_and_label_pairs_for_single_label,
+    process_feature_classes_combination
+)
 from utility.logger import make_logger
 from utility.utils import (
     raise_unknown,
     coefficients_for_bases,
-    log_or_print,
     compute_proportion,
-    get_project_root_path,
-    deterministic_subset
+    get_project_root_path
 )
 from local_datasets.transforms import (
+    TRANSFORMS_KEY,
     make_transforms
 )
 sys.path.pop(0)
@@ -43,6 +45,7 @@ DSPRITES_COLOR_URL = EMPTY_URL
 DSPRITES_ORIGINAL_HASH = "7da33b31b13a06f4b04a70402ce90c2e"
 DSPRITES_BW_HASH = "322531291bed2d9f98049bae4e64d194"
 DSPRITES_COLOR_HASH = "ce1f3448066b87edada5460376289731"
+DSPRITES_FILENAME = "dsprites.npz"
 
 
 DSPRITES_NUM_COLORS = 3
@@ -167,7 +170,7 @@ def get_num_colors_from_color_scheme(color_scheme):
     return num_colors
 
 
-class DSpritesDataset:
+class DSpritesDataset(ContainerDataset):
 
     def __init__(
         self,
@@ -175,8 +178,6 @@ class DSpritesDataset:
         color_scheme='bw',
         transform=None
     ):
-        self.dsprites_images = dsprites_images
-        self.transform = transform
 
         self.color_scheme = color_scheme
 
@@ -185,20 +186,16 @@ class DSpritesDataset:
                 = (DSPRITES_NUM_COLORS,) \
                     + dsprites_images[0].shape
 
-        self.num_images_of_one_color = self.dsprites_images.shape[0]
-        self.index_and_label_pairs = self._make_index_and_label_pairs()
+        self.num_images_of_one_color = dsprites_images.shape[0]
 
-    def _make_index_and_label_pairs(self):
-        raise NotImplementedError()
+        super().__init__(dsprites_images, transform)
 
-    def __getitem__(self, idx):
-        idx_to_extract, class_label = self.index_and_label_pairs[idx]
-
+    def _extract_images_from_container(self, idx_to_extract):
         if self.color_scheme in ["rgb", "rgbw"]:
             assert self.colored_image_shape
             color = int(idx_to_extract / self.num_images_of_one_color)
             original_idx = idx_to_extract % self.num_images_of_one_color
-            original_image = self.dsprites_images[original_idx]
+            original_image = self.container[original_idx]
             if color == 3:
                 assert self.color_scheme == "rgbw"
                 colored_image = np.concatenate(
@@ -212,19 +209,8 @@ class DSpritesDataset:
         else:
             # TODO(Alex | 07.11.2023): check that dsprites works with "bw"
             assert self.color_scheme == "bw"
-            image = self.dsprites_images[idx_to_extract]
-
-        image = torch.Tensor(image)
-        if self.transform:
-            image = self.transform(image)
-
-        if isinstance(class_label, tuple):
-            return image, *class_label
-
-        return image, class_label
-
-    def __len__(self):
-        return len(self.index_and_label_pairs)
+            image = self.container[idx_to_extract]
+        return image
 
 
 class DSpritesUnlabelledDataset(DSpritesDataset):
@@ -267,18 +253,7 @@ class DSpritesSingleLabelDataset(DSpritesDataset):
         )
 
     def _make_index_and_label_pairs(self):
-        assert self.indices_for_classes
-        index_and_label_pairs = []
-        for class_label in range(len(self.indices_for_classes)):
-
-            indices_for_class_label = list(
-                self.indices_for_classes[class_label]
-            )
-
-            for idx in indices_for_class_label:
-                index_and_label_pairs.append((idx, class_label))
-
-        return sorted(index_and_label_pairs, key=lambda x: x[0])
+        return make_index_and_label_pairs_for_single_label(self)
 
 
 class DSpritesMultiLabelDataset(DSpritesDataset):
@@ -340,14 +315,6 @@ class BaseDataDSprites(BaseData):
         elif color_scheme == "rgbw":
             possible_features_values['color'] = np.array([1., 2., 3., 4.])
 
-        if file_with_pruned_indices_path is None:
-            self.pruned_indices = set()
-        else:
-            self.pruned_indices = pickle.load(
-                open(file_with_pruned_indices_path, 'rb')
-            )
-            assert isinstance(self.pruned_indices, set)
-
         self.transform = transform
         features_sizes = np.array(
             [
@@ -355,38 +322,52 @@ class BaseDataDSprites(BaseData):
                     for feature in possible_features
             ]
         )
+        self.features_bases = np.concatenate(
+            (features_sizes[::-1].cumprod()[::-1][1:], np.array([1,]))
+        )
 
         super(BaseDataDSprites, self).__init__(
             possible_features,
-            possible_features_values,
-            train_val_split
+            features_sizes,
+            train_val_split,
+            file_with_pruned_indices_path
         )
 
-    def _init_helpers(self):
-        self.features_bases = np.concatenate(
-            (self.features_sizes[::-1].cumprod()[::-1][1:], np.array([1,]))
-        )
+    def _fill_indices_for_feature_values(self):
 
-    def _compute_total_num_samples(self):
         assert self.train_indices
-        total_num_samples = {}
-        total_num_samples["train"] = len(self.train_indices)
-        total_num_samples["test"] \
-            = self.total_num_images \
-                - total_num_samples["train"] \
-                - len(self.pruned_indices)
-        return total_num_samples
+        assert hasattr(self, "possible_features")
+        assert hasattr(self, "indices_for_feature_values")
+        assert hasattr(self, "features_sizes")
+        assert hasattr(self, "pruned_indices")
+        assert self.pruned_indices is not None
 
-    def _split_into_train_indices(self):
+        for features_classes_combination in itertools.product(
+            *[range(size) for size in self.features_sizes]
+        ):
+            image_index = self._features_classes_combination_to_index(
+                np.array(features_classes_combination)
+            )
 
-        all_indices = set(list(range(self.total_num_images)))
+            process_feature_classes_combination(
+                image_index,
+                features_classes_combination,
+                self.train_indices,
+                self.pruned_indices,
+                self.indices_for_feature_values,
+                self.possible_features
+            )
 
-        non_pruned_set = all_indices.difference(self.pruned_indices)
+    def _features_classes_combination_to_index(
+        self,
+        features_classes_combination
+    ):
+        assert isinstance(features_classes_combination, np.ndarray)
+        return np.dot(
+            features_classes_combination,
+            self.features_bases
+        ).astype(int)
 
-        return deterministic_subset(
-            non_pruned_set,
-            compute_proportion(self.train_val_split, len(non_pruned_set))
-        )
 
     # currently not used
     def _split_into_train_indices_by_combinations_subsampling(
@@ -476,77 +457,6 @@ class BaseDataDSprites(BaseData):
 
         return train_indices
 
-    def _create_indices_for_feature_values(self):
-
-        def create_empty_indices_for_feature_values(
-            possible_features,
-            features_sizes,
-            feature_to_idx
-        ):
-            indices_for_feature_values = {}
-            indices_for_feature_values["train"] = {}
-            indices_for_feature_values["test"] = {}
-            for feature in possible_features:
-                num_values = features_sizes[feature_to_idx[feature]]
-                indices_for_feature_values["train"][feature] \
-                    = [
-                        set()
-                            for _
-                            in range(num_values)
-                    ]
-                indices_for_feature_values["test"][feature] = \
-                    [
-                        set()
-                            for _
-                            in range(num_values)
-                    ]
-            return indices_for_feature_values
-
-        assert self.train_indices
-
-        indices_for_feature_values = create_empty_indices_for_feature_values(
-            self.possible_features,
-            self.features_sizes,
-            self.feature_to_idx
-        )
-
-        for features_classes_combination in itertools.product(
-            *[range(size) for size in self.features_sizes]
-        ):
-            image_index = self._features_classes_combination_to_index(
-                np.array(features_classes_combination)
-            )
-            if image_index in self.pruned_indices:
-                continue
-
-            split_name = (
-                "train"
-                    if image_index in self.train_indices
-                        else "test"
-            )
-
-            for feature_idx, feature_value_idx in enumerate(
-                features_classes_combination
-            ):
-                (indices_for_feature_values
-                    [split_name]
-                    [self.possible_features[feature_idx]]
-                    [feature_value_idx]
-                        .add(image_index)
-                )
-
-        return indices_for_feature_values
-
-    def _features_classes_combination_to_index(
-        self,
-        features_classes_combination
-    ):
-        assert isinstance(features_classes_combination, np.ndarray)
-        return np.dot(
-            features_classes_combination,
-            self.features_bases
-        ).astype(int)
-
     def get_dataset(self, indices):
         """
         Args:
@@ -603,36 +513,27 @@ def make_dsprites_base_data(
     logger=make_logger()
 ) -> BaseDataDSprites:
 
-    log_or_print("Making dsprites_base_data..", logger=logger)
-    dataset_name = "dsprites"
-    dataset_path = os.path.join(dsprites_config["path"], dataset_name + ".npz")
-    fetch_data(
-        dataset_path=dataset_path,
-        assert_folder_func=assert_dataset_as_file(
-            get_dsprites_file_hash(dataset_name)
-        ),
-        do_fetch_data_func=do_fetch_dataset_as_file(
-            get_dsprites_dataset_url(dataset_name)
-        ),
-        logger=logger,
-        dataset_path_is_folder=False
+    dsprites_zip = get_base_dataset(
+        base_data_config=dsprites_config,
+        dataset_filename=DSPRITES_FILENAME,
+        get_dataset_hash=get_dsprites_file_hash,
+        get_dataset_url=get_dsprites_dataset_url,
+        read_dataset=read_dsprites_npz,
+        logger=logger
     )
-    dsprites_zip = read_dsprites_npz(
-        filename=dataset_path
-    )
-    transform = make_transforms(dsprites_config.get("transforms"))
+
     return BaseDataDSprites(
         dsprites_zip=dsprites_zip,
         colored=(dsprites_config["type"] == "color"),
         train_val_split=dsprites_config["train_val_split"],
-        transform=transform,
+        transform=make_transforms(dsprites_config.get(TRANSFORMS_KEY)),
         color_scheme=dsprites_config.get("color_scheme"),
         file_with_pruned_indices_path=dsprites_config.get(
             "file_with_pruned_indices_path"
         )
     )
 
-
+# TODO(Alex | 26.11.2023): use "load_from_pickle" instead of this
 def load_dsprites_base_data(path):
     return pickle.load(open(path, "rb"))
 

@@ -2,7 +2,6 @@ import sys
 import os
 import torch
 import torchvision
-import copy
 
 
 # local modules

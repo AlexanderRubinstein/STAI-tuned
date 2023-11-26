@@ -17,11 +17,11 @@ from utility.utils import (
     deterministic_subset,
     compute_proportion,
     get_with_assert,
-    invert_dict
+    invert_dict,
+    load_from_pickle
 )
 from local_datasets.dsprites import (
-    make_dsprites_base_data,
-    load_dsprites_base_data
+    make_dsprites_base_data
 )
 from local_datasets.utils import (
     make_or_load_from_cache,
@@ -355,24 +355,31 @@ class FeaturesLabeller:
                 len(indices_for_values_per_feature)
             )
 
-        value_to_class = invert_dict(values_per_class)
-        assert len(value_to_class) == len(indices_for_values_per_feature), \
-            (f"When using manual_values_per_class, the following values "
-            f"for {feature} are not "
-            "assigned to classes: {}".format(
-                set(
-                    range(len(indices_for_values_per_feature))
-                ).difference(
-                    set(value_to_class.keys())
-                )
-            ))
+        value_to_class = invert_dict(values_per_class, none_to_string=True)
+        if "None" not in value_to_class:
+            assert len(value_to_class) == len(indices_for_values_per_feature), \
+                (f"When using manual_values_per_class, the following values "
+                f"for {feature} are not "
+                "assigned to classes: {}".format(
+                    set(
+                        range(len(indices_for_values_per_feature))
+                    ).difference(
+                        set(value_to_class.keys())
+                    )
+                ))
 
         merged_indices = [set()] * self.classes_per_feature
 
         for value_id, indices_for_value in enumerate(
             indices_for_values_per_feature
         ):
-            class_id = value_to_class[value_id]
+            if value_id not in value_to_class:
+                assert "None" in value_to_class
+                class_id = value_to_class["None"]
+            else:
+                class_id = value_to_class[value_id]
+            if class_id is None:
+                continue
             merged_indices[class_id] = merged_indices[class_id].union(
                 indices_for_value
             )
@@ -403,8 +410,13 @@ class FeaturesLabeller:
                         off_diag_indices_to_labels_dict[index] \
                             = {dataset_name: label}
 
-        return sorted(
-            [
+        off_diag_indices_to_labels = []
+
+        num_off_diag = len(self.off_diag_names)
+        for index, labels_dict in off_diag_indices_to_labels_dict.items():
+            if len(labels_dict) < num_off_diag:
+                continue
+            off_diag_indices_to_labels.append(
                 (
                     index,
                     tuple(
@@ -413,11 +425,9 @@ class FeaturesLabeller:
                                 in self.off_diag_names
                     )
                 )
-                    for index, labels_dict
-                        in off_diag_indices_to_labels_dict.items()
-            ],
-            key=lambda x: x[0]
-        )
+            )
+
+        return sorted(off_diag_indices_to_labels, key=lambda x: x[0])
 
     def get_dataloaders(
         self,
@@ -642,22 +652,28 @@ def make_features_labeller(
         "Making features_labeller for \"{}\"..".format(base_data_type),
         logger=logger
     )
-    if base_data_type == "dsprites":
-        base_data = make_or_load_from_cache(
-            "base_data_dsprites",
-            base_data_config[base_data_type],
-            make_dsprites_base_data,
-            load_dsprites_base_data,
-            cache_path=cache_path,
-            forward_cache_path=False,
-            logger=logger
-        )
+
+    if not ("make_base_data" in features_labeller_config):
+
+        assert base_data_type == "dsprites"
+        make_base_data = make_dsprites_base_data
+
     else:
-        raise_unknown(
-            "base data name",
-            base_data_type,
-            "make_features_labeller"
+
+        make_base_data = get_with_assert(
+            features_labeller_config,
+            "make_base_data"
         )
+
+    base_data = make_or_load_from_cache(
+        f"base_data_{base_data_type}",
+        base_data_config[base_data_type],
+        make_base_data,
+        load_from_pickle,
+        cache_path=cache_path,
+        forward_cache_path=False,
+        logger=logger
+    )
     return FeaturesLabeller(
         base_data,
         features_labeller_config["features_list"],
@@ -670,4 +686,4 @@ def make_features_labeller(
 
 
 def load_features_labeller(path):
-    return pickle.load(open(path, "rb"))
+    return load_from_pickle(path)
