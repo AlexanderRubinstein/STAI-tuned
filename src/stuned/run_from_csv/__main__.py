@@ -60,7 +60,7 @@ MAIN_PATH_COLUMN = "path_to_main"
 DEV_NULL = "/dev/null"
 DEFAULT_SLURM_ARGS_DICT = {
     "partition": "gpu-2080ti-beegfs",
-    "gpus": 1,
+    "gres": "gpu:1",
     "time": "02:00:00",
     "ntasks": 1,
     "cpus-per-task": 2,
