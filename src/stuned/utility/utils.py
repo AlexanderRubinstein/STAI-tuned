@@ -1,5 +1,6 @@
 import warnings
 import ast
+
 # import torch
 import numpy as np
 import random
@@ -28,6 +29,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import io
 import re
+
 # import matplotlib.pyplot as plt
 
 
@@ -37,17 +39,18 @@ PROFILER_GROUP_BY_STACK_N = 5
 PROFILER_OUTPUT_ROW_LIMIT = 10
 DEFAULT_FILE_CHUNK_SIZE = 4096
 EMPTY_CSV_TOKEN = "?"
-DEFAULT_ENV_NAME = os.environ["DEFAULT_ENV"] if "DEFAULT_ENV" in os.environ \
-    else None
+DEFAULT_ENV_NAME = os.environ["DEFAULT_ENV"] if "DEFAULT_ENV" in os.environ else None
 TEST_ENV_NAME = os.environ["TEST_ENV"] if "TEST_ENV" in os.environ else None
 # TEST_ENV_NAME = None # os.environ["TEST_ENV"]
 BASHRC_PATH = os.path.join(os.environ["HOME"], ".bashrc")
 NEW_SHELL_INIT_COMMAND = "source {} && conda activate".format(BASHRC_PATH)
 FLOATING_POINT = "."
 NAME_SEP = "_"
-NAME_NUMBER_SEPARATOR = '-'
+NAME_NUMBER_SEPARATOR = "-"
 NULL_CONTEXT = contextlib.nullcontext()
-PROJECT_ROOT_ENV_NAME = "PROJECT_ROOT_PROVIDED_FOR_STUNED" if "PROJECT_ROOT_PROVIDED_FOR_STUNED" in os.environ else None
+PROJECT_ROOT_ENV_NAME = (
+    "PROJECT_ROOT_PROVIDED_FOR_STUNED" if "PROJECT_ROOT_PROVIDED_FOR_STUNED" in os.environ else None
+)
 
 # If environment variables are not set, assume default values
 if DEFAULT_ENV_NAME is None:
@@ -66,7 +69,9 @@ if PROJECT_ROOT_ENV_NAME is None:
     PROJECT_ROOT_ENV_NAME = os.getcwd()
     # update the environment variable
     os.environ[PROJECT_ROOT_ENV_NAME] = PROJECT_ROOT_ENV_NAME
-    warnings.warn(f"PROJECT_ROOT_PROVIDED_FOR_STUNED is not set. Assuming `{PROJECT_ROOT_ENV_NAME}`.")
+    warnings.warn(
+        f"PROJECT_ROOT_PROVIDED_FOR_STUNED is not set. Assuming `{PROJECT_ROOT_ENV_NAME}`."
+    )
 
 DEFAULT_SLEEP_TIME = 10
 DEFAULT_NUM_ATTEMTPS = 50
@@ -78,11 +83,11 @@ DEFAULT_INDENT_IN_JSON = 2
 SYSTEM_PLATFORM = platform.system().lower()
 
 
-LIST_START_SYMBOL = '['
-LIST_END_SYMBOL = ']'
-DELIMETER = ','
-QUOTE_CHAR = '\"'
-ESCAPE_CHAR = '\\'
+LIST_START_SYMBOL = "["
+LIST_END_SYMBOL = "]"
+DELIMETER = ","
+QUOTE_CHAR = '"'
+ESCAPE_CHAR = "\\"
 INF = float("Inf")
 TOL = 1e6
 
@@ -95,7 +100,6 @@ PLT_PLOT_WIDTH = 5
 
 
 class ChildrenForPicklingPreparer:
-
     def _prepare_for_pickling(self):
         for attr_name in object_attributes(self):
             prepare_for_pickling(getattr(self, attr_name))
@@ -106,12 +110,13 @@ class ChildrenForPicklingPreparer:
 
 
 def object_attributes(obj):
-    return filter(lambda a: not a.startswith('__'), dir(obj))
+    return filter(lambda a: not a.startswith("__"), dir(obj))
 
 
 def read_yaml(yaml_file):
-    with open(yaml_file, 'r') as stream:
+    with open(yaml_file, "r") as stream:
         return yaml.safe_load(stream)
+
 
 # def apply_random_seed(random_seed):
 #     random.seed(random_seed)
@@ -136,6 +141,7 @@ def current_time_formatted():
     # Format the date and time as a string
     return now.strftime("%Y-%m-%d %H:%M:%S")
 
+
 def raise_unknown(param, value, location=""):
     exception_msg = "Unknown {}".format(param)
     if location:
@@ -158,12 +164,7 @@ def append_dict(total_dict, current_dict, allow_new_keys=False):
         is_new_total_dict = True
     for key, value in current_dict.items():
         if isinstance(value, dict):
-            if to_create_new_key(
-                is_new_total_dict,
-                allow_new_keys,
-                key,
-                total_dict
-            ):
+            if to_create_new_key(is_new_total_dict, allow_new_keys, key, total_dict):
                 sub_dict = {}
                 append_dict(sub_dict, value)
                 total_dict[key] = sub_dict
@@ -174,12 +175,7 @@ def append_dict(total_dict, current_dict, allow_new_keys=False):
                 append_dict(sub_dict, value)
                 total_dict[key] = sub_dict
         else:
-            if to_create_new_key(
-                is_new_total_dict,
-                allow_new_keys,
-                key,
-                total_dict
-            ):
+            if to_create_new_key(is_new_total_dict, allow_new_keys, key, total_dict):
                 total_dict[key] = [value]
             else:
                 assert key in total_dict
@@ -193,44 +189,28 @@ def check_element_in_iterable(
     element_name="element",
     iterable_name="iterable",
     reference=None,
-    raise_if_wrong=True
+    raise_if_wrong=True,
 ):
     element_in_iterable = element in iterable
     if raise_if_wrong:
         try:
             assert element_in_iterable
         except Exception as e:
-            exception_msg = "No {} \"{}\" in {}:\n{}".format(
-                    element_name,
-                    element,
-                    iterable_name,
-                    iterable
-                )
+            exception_msg = 'No {} "{}" in {}:\n{}'.format(
+                element_name, element, iterable_name, iterable
+            )
             if reference is not None:
                 exception_msg += "\nFor:\n {}".format(reference)
             raise Exception(exception_msg)
     return element_in_iterable
 
 
-def check_dict(
-    dict,
-    required_keys,
-    optional_keys=[],
-    check_reverse=False,
-    raise_if_wrong=True
-):
-
+def check_dict(dict, required_keys, optional_keys=[], check_reverse=False, raise_if_wrong=True):
     check_1 = False
     check_2 = False
 
     for key in required_keys:
-        check_1 = check_element_in_iterable(
-            dict,
-            key,
-            "key",
-            "dict",
-            raise_if_wrong=raise_if_wrong
-        )
+        check_1 = check_element_in_iterable(dict, key, "key", "dict", raise_if_wrong=raise_if_wrong)
         if not check_1:
             break
     if check_1:
@@ -243,7 +223,7 @@ def check_dict(
                     "key",
                     "set of allowed keys",
                     reference=dict,
-                    raise_if_wrong=raise_if_wrong
+                    raise_if_wrong=raise_if_wrong,
                 )
                 if not check_2:
                     break
@@ -253,22 +233,17 @@ def check_dict(
 
 
 def runcmd(cmd, verbose=False, logger=None):
-
     try:
-        cmd_output = subprocess.check_output(
-            cmd,
-            stderr=subprocess.STDOUT,
-            shell=True
-        )
+        cmd_output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
         if verbose:
-            msg = cmd_output.decode('utf-8', errors='ignore')
+            msg = cmd_output.decode("utf-8", errors="ignore")
             if msg:
                 if logger:
                     logger.log(msg)
                 else:
                     print(msg)
     except subprocess.CalledProcessError as e:
-        raise Exception(e.output.decode('utf-8', errors='ignore'))
+        raise Exception(e.output.decode("utf-8", errors="ignore"))
 
 
 def compute_dicts_diff(dict1, dict2, ignore_order=True):
@@ -317,6 +292,7 @@ def compute_dicts_diff(dict1, dict2, ignore_order=True):
 #     except:
 #         return None
 
+
 def get_gpu_info():
     gpu_info = ""
     return "?"
@@ -330,9 +306,12 @@ def get_gpu_info():
     # else:
     #     gpu_info = "no-gpu"
     # return gpu_info
-        
+
+
 def get_cpu_cores():
     return repr(len(os.sched_getaffinity(0)))
+
+
 #
 # def get_model_device(model):
 #
@@ -347,26 +326,21 @@ def get_cpu_cores():
 def get_project_root_path():
     if not PROJECT_ROOT_ENV_NAME in os.environ:
         raise Exception(
-            f"STAI-tuned expects project root path "
-            f"in variable \"{PROJECT_ROOT_ENV_NAME}\""
+            f"STAI-tuned expects project root path " f'in variable "{PROJECT_ROOT_ENV_NAME}"'
         )
     return os.environ[PROJECT_ROOT_ENV_NAME]
 
 
 def get_stuned_root_path():
     return os.path.abspath(
-        os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        )
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     )
 
 
 def make_unique_run_name(hashed_config_diff):
-    return "{}---{}---{}".format(
-        get_current_time(),
-        hashed_config_diff,
-        os.getpid()
-    ).replace(" ", "_")
+    return "{}---{}---{}".format(get_current_time(), hashed_config_diff, os.getpid()).replace(
+        " ", "_"
+    )
 
 
 def get_current_run_folder(experiment_name, hashed_config_diff):
@@ -374,7 +348,7 @@ def get_current_run_folder(experiment_name, hashed_config_diff):
         get_project_root_path(),
         DEFAULT_EXPERIMENTS_FOLDER,
         experiment_name,
-        make_unique_run_name(hashed_config_diff)
+        make_unique_run_name(hashed_config_diff),
     )
 
 
@@ -393,14 +367,10 @@ def get_value_from_config(file_path, value_name):
             if value_name == line_elements[0]:
                 if len(line_elements) < 2:
                     raise Exception(
-                        "Line \"{}\" does not have value"
-                        " for \"{}\".".format(line, value_name)
+                        'Line "{}" does not have value' ' for "{}".'.format(line, value_name)
                     )
                 return line_elements[1]
-    raise Exception(
-        "File \"{}\" does not contain"
-        " \"{}\".".format(file_path, value_name)
-    )
+    raise Exception('File "{}" does not contain' ' "{}".'.format(file_path, value_name))
 
 
 def log_or_print(msg, logger=None, auto_newline=False):
@@ -461,12 +431,7 @@ def error_or_print(msg, logger=None, auto_newline=False):
 #     return checkpoint
 
 
-def save_checkpoint(
-    checkpoint,
-    checkpoint_folder,
-    checkpoint_name=None,
-    logger=None
-):
+def save_checkpoint(checkpoint, checkpoint_folder, checkpoint_name=None, logger=None):
     if checkpoint_name is None:
         checkpoint_name = make_checkpoint_name(checkpoint)
     os.makedirs(checkpoint_folder, exist_ok=True)
@@ -478,10 +443,7 @@ def save_checkpoint(
         print(log_msg)
     for obj in checkpoint.values():
         prepare_for_pickling(obj)
-    torch.save(
-        checkpoint,
-        open(checkpoint_savepath, "wb")
-    )
+    torch.save(checkpoint, open(checkpoint_savepath, "wb"))
     for obj in checkpoint.values():
         prepare_for_unpickling(obj)
 
@@ -506,11 +468,7 @@ def make_checkpoint_name(checkpoint):
     )
 
 
-def get_leaves_of_nested_dict(
-    nested_dict,
-    nested_key_prefix=[],
-    include_values=False
-):
+def get_leaves_of_nested_dict(nested_dict, nested_key_prefix=[], include_values=False):
     assert len(nested_dict) > 0, "Nested dict is empty."
     result = []
     for key, value in nested_dict.items():
@@ -518,9 +476,7 @@ def get_leaves_of_nested_dict(
         if isinstance(value, dict):
             result.extend(
                 get_leaves_of_nested_dict(
-                    value,
-                    nested_key_prefix=current_prefix,
-                    include_values=include_values
+                    value, nested_key_prefix=current_prefix, include_values=include_values
                 )
             )
         else:
@@ -533,47 +489,33 @@ def get_leaves_of_nested_dict(
 
 
 def update_dict_by_nested_key(
-    input_dict,
-    nested_key_as_list,
-    new_value,
-    to_create_new_elements=False
+    input_dict, nested_key_as_list, new_value, to_create_new_elements=False
 ):
     apply_func_to_dict_by_nested_key(
-        input_dict,
-        nested_key_as_list,
-        lambda x: new_value,
-        to_create_new_elements
+        input_dict, nested_key_as_list, lambda x: new_value, to_create_new_elements
     )
 
 
 def apply_func_to_dict_by_nested_key(
-    input_dict,
-    nested_key_as_list,
-    func,
-    to_create_new_elements=False
+    input_dict, nested_key_as_list, func, to_create_new_elements=False
 ):
     if not isinstance(input_dict, dict):
         raise Exception(
-            "\"{}\" is expected to be a dict "
+            '"{}" is expected to be a dict '
             "containing the following nested dicts: \n{}".format(
-                input_dict,
-                nested_key_as_list[:-1]
+                input_dict, nested_key_as_list[:-1]
             )
         )
     if not isinstance(nested_key_as_list, list):
         raise Exception(
-            "\"{}\" is expected "
-            "to be a list of nested keys for dict: \n{}".format(
-                nested_key_as_list,
-                input_dict
-            )
+            '"{}" is expected '
+            "to be a list of nested keys for dict: \n{}".format(nested_key_as_list, input_dict)
         )
     if len(nested_key_as_list) == 0:
         raise Exception("Empty nested key was given for dict update.")
     else:
-
         current_key = nested_key_as_list[0]
-        is_leaf = (len(nested_key_as_list) == 1)
+        is_leaf = len(nested_key_as_list) == 1
 
         if not current_key in input_dict:
             if to_create_new_elements:
@@ -584,30 +526,22 @@ def apply_func_to_dict_by_nested_key(
             else:
                 raise Exception(
                     "During recursive dict update {} "
-                    "was not found in {}".format(
-                        current_key,
-                        input_dict
-                    )
+                    "was not found in {}".format(current_key, input_dict)
                 )
 
         if is_leaf:
-            input_dict[current_key] \
-                = func(input_dict[current_key])
+            input_dict[current_key] = func(input_dict[current_key])
         else:
             new_subdict = input_dict[current_key]
             apply_func_to_dict_by_nested_key(
-                new_subdict,
-                nested_key_as_list[1:],
-                func,
-                to_create_new_elements
+                new_subdict, nested_key_as_list[1:], func, to_create_new_elements
             )
             input_dict[current_key] = new_subdict
 
 
 def extract_profiler_results(prof):
     return prof.key_averages(group_by_stack_n=PROFILER_GROUP_BY_STACK_N).table(
-        sort_by="self_cuda_memory_usage",
-        row_limit=PROFILER_OUTPUT_ROW_LIMIT
+        sort_by="self_cuda_memory_usage", row_limit=PROFILER_OUTPUT_ROW_LIMIT
     )
 
 
@@ -624,10 +558,7 @@ def move_folder_contents(src_folder, dst_folder):
     for file_or_folder in os.listdir(src_folder):
         dst_path = os.path.join(dst_folder, file_or_folder)
         assert not os.path.exists(dst_path)
-        os.rename(
-            os.path.join(src_folder, file_or_folder),
-            dst_path
-        )
+        os.rename(os.path.join(src_folder, file_or_folder), dst_path)
 
 
 def remove_all_but_subdirs(src_folder, objects_to_keep):
@@ -647,11 +578,7 @@ def remove_file_or_folder(file_or_folder):
     elif os.path.isdir(file_or_folder):
         shutil.rmtree(file_or_folder)
     else:
-        raise_unknown(
-            "file type",
-            "",
-            "for object \"{}\"".format(file_or_folder)
-        )
+        raise_unknown("file type", "", 'for object "{}"'.format(file_or_folder))
 
 
 def is_nested_dict(input_dict):
@@ -668,17 +595,10 @@ def ensure_separator_after_folder(folder_path):
     return folder_path
 
 
-def compute_file_hash(
-    filename,
-    chunksize=DEFAULT_FILE_CHUNK_SIZE,
-    hash_type="md5"
-):
+def compute_file_hash(filename, chunksize=DEFAULT_FILE_CHUNK_SIZE, hash_type="md5"):
     hasher = get_hasher(hash_type)
     with open(filename, "rb") as f:
-        for byte_block in iter(
-            lambda: f.read(chunksize),
-            b""
-        ):
+        for byte_block in iter(lambda: f.read(chunksize), b""):
             hasher.update(byte_block)
     return hasher.hexdigest()
 
@@ -698,17 +618,14 @@ def get_hostname():
 
 def remove_filename_extension(filename, must_have_extension=True):
     if "." in filename:
-        filename = filename[:filename.find(".")]
+        filename = filename[: filename.find(".")]
         assert "." not in filename
     elif must_have_extension:
-        raise Exception(
-            "Filename {} is expected to have extension".format(filename)
-        )
+        raise Exception("Filename {} is expected to have extension".format(filename))
     return filename
 
 
 def range_for_each_group(num_groups, num_elements):
-
     assert num_elements >= num_groups
 
     indices_per_group = int(num_elements / num_groups)
@@ -716,15 +633,10 @@ def range_for_each_group(num_groups, num_elements):
 
     return [
         (
-            group_id * indices_per_group
-                + (
-                    min(group_id, remainder)
-                ),
-            (group_id + 1) * (indices_per_group)
-                + (
-                    min(group_id, remainder - 1) + 1
-                )
-        ) for group_id in range(num_groups)
+            group_id * indices_per_group + (min(group_id, remainder)),
+            (group_id + 1) * (indices_per_group) + (min(group_id, remainder - 1) + 1),
+        )
+        for group_id in range(num_groups)
     ]
 
 
@@ -749,12 +661,7 @@ def error_callback(exception):
 
 def deterministic_subset(input_set, num_to_subsample):
     assert num_to_subsample <= len(input_set)
-    subsampled_idxs = np.linspace(
-        0,
-        len(input_set) - 1,
-        num_to_subsample,
-        dtype=np.int32
-    )
+    subsampled_idxs = np.linspace(0, len(input_set) - 1, num_to_subsample, dtype=np.int32)
     res = set()
     set_as_list = sorted(list(input_set))
     for i in subsampled_idxs:
@@ -763,20 +670,15 @@ def deterministic_subset(input_set, num_to_subsample):
 
 
 def compute_proportion(proportion, total_number):
-    return max(1, int(
-        proportion * total_number
-    ))
+    return max(1, int(proportion * total_number))
 
 
 def make_autogenerated_config_name(input_csv_path, row_number):
-    return "[{}]_{}_autogenerated_config.yaml".format(
-        row_number,
-        get_hash(input_csv_path)
-    )
+    return "[{}]_{}_autogenerated_config.yaml".format(row_number, get_hash(input_csv_path))
 
 
 def save_as_yaml(output_file_name, data):
-    with open(output_file_name, 'w') as outfile:
+    with open(output_file_name, "w") as outfile:
         yaml.dump(data, outfile, default_flow_style=False)
 
 
@@ -793,7 +695,7 @@ def write_into_csv_with_column_names(
     replace_nulls=False,
     append_row=False,
     use_lock=True,
-    lock_to_use=None
+    lock_to_use=None,
 ):
     """
     Insert <value> into the intersection of row number <row_number>
@@ -823,24 +725,25 @@ def write_into_csv_with_column_names(
         other args
     """
 
-    tempfile = NamedTemporaryFile('w+t', newline='', delete=False)
+    tempfile = NamedTemporaryFile("w+t", newline="", delete=False)
 
-    lock = make_file_lock(file_path) if (lock_to_use is None and use_lock) else lock_to_use if lock_to_use else NULL_CONTEXT
+    lock = (
+        make_file_lock(file_path)
+        if (lock_to_use is None and use_lock)
+        else lock_to_use
+        if lock_to_use
+        else NULL_CONTEXT
+    )
 
     with lock:
-
-        with open(file_path, 'r', newline='') as csv_file, tempfile:
-
+        with open(file_path, "r", newline="") as csv_file, tempfile:
             reader = csv.reader(
-                (
-                    (x.replace('\0', '') for x in csv_file)
-                        if replace_nulls else csv_file
-                ),
+                ((x.replace("\0", "") for x in csv_file) if replace_nulls else csv_file),
                 delimiter=delimiter,
                 quotechar=quotechar,
                 quoting=quoting,
                 escapechar=escapechar,
-                doublequote=doublequote
+                doublequote=doublequote,
             )
             writer = csv.writer(
                 tempfile,
@@ -848,7 +751,7 @@ def write_into_csv_with_column_names(
                 quotechar=quotechar,
                 quoting=quoting,
                 escapechar=escapechar,
-                doublequote=doublequote
+                doublequote=doublequote,
             )
 
             appended_column = False
@@ -860,12 +763,10 @@ def write_into_csv_with_column_names(
             pos_in_row = None
 
             if num_rows == 0:
-
-                assert row_number == 1, \
-                    (
-                        "Can't insert into row number {} of empty file, "
-                        "only row number 1 is possible."
-                    ).format(row_number)
+                assert row_number == 1, (
+                    "Can't insert into row number {} of empty file, "
+                    "only row number 1 is possible."
+                ).format(row_number)
 
                 writer.writerow([column_name])
                 append_row = True
@@ -874,7 +775,6 @@ def write_into_csv_with_column_names(
 
             else:
                 for current_row_number, row in enumerate(reader):
-
                     if current_row_number == 0:
                         if column_name in row:
                             pos_in_row = row.index(column_name)
@@ -888,18 +788,14 @@ def write_into_csv_with_column_names(
                         if appended_column and row_number > 0:
                             row.append(value)
                         else:
-                            assert len(row) > pos_in_row, \
-                                "CSV's contents are inconsistent " \
-                                "with the number of columns " \
-                                "for the file {}. Requested to insert " \
-                                "column {} into row {} \nFound {} columns " \
-                                 "in the row, while expected at least {}." \
-                                  .format(
-                                    file_path,
-                                    column_name,
-                                    row_number,
-                                    len(row),
-                                    pos_in_row + 1
+                            assert len(row) > pos_in_row, (
+                                "CSV's contents are inconsistent "
+                                "with the number of columns "
+                                "for the file {}. Requested to insert "
+                                "column {} into row {} \nFound {} columns "
+                                "in the row, while expected at least {}.".format(
+                                    file_path, column_name, row_number, len(row), pos_in_row + 1
+                                )
                             )
 
                             row[pos_in_row] = value
@@ -911,7 +807,6 @@ def write_into_csv_with_column_names(
                     num_cols = len(row)
 
             if append_row:
-
                 assert num_cols is not None and num_cols > 0
 
                 assert row_number == num_rows
@@ -922,25 +817,17 @@ def write_into_csv_with_column_names(
         if not value_inserted:
             raise Exception(
                 "CSV file {} has {} rows, while insertion "
-                "into row {} was requested!".format(
-                    file_path,
-                    num_rows,
-                    row_number
-                )
+                "into row {} was requested!".format(file_path, num_rows, row_number)
             )
         try:
             shutil.move(tempfile.name, file_path)
         except Exception as e:
             raise Exception(
-                "Error while moving temp file {} to {}:\n{}".format(
-                    tempfile.name,
-                    file_path,
-                    e
-                )
+                "Error while moving temp file {} to {}:\n{}".format(tempfile.name, file_path, e)
             )
 
-def count_rows_in_file(file):
 
+def count_rows_in_file(file):
     rowcount = 0
 
     for _ in file:
@@ -952,7 +839,6 @@ def count_rows_in_file(file):
 
 
 def remove_elements_from_the_end(sequence, element_to_remove):
-
     assert len(sequence)
 
     end_pos = len(sequence) - 1
@@ -960,76 +846,52 @@ def remove_elements_from_the_end(sequence, element_to_remove):
     while end_pos >= 0 and sequence[end_pos] == element_to_remove:
         end_pos -= 1
 
-    return sequence[:end_pos + 1]
+    return sequence[: end_pos + 1]
 
 
 def itself_and_lower_upper_case(word):
     return (word, word.lower(), word.upper())
 
 
-def decode_strings_in_dict(
-    input_dict,
-    list_separators,
-    list_start_symbol,
-    list_end_symbol
-):
-
+def decode_strings_in_dict(input_dict, list_separators, list_start_symbol, list_end_symbol):
     for key, value in input_dict.items():
-
         if isinstance(value, str):
-
             if value == "":
                 continue
 
-            value = decode_val_from_str(
-                value,
-                list_separators,
-                list_start_symbol,
-                list_end_symbol
-            )
+            value = decode_val_from_str(value, list_separators, list_start_symbol, list_end_symbol)
 
             input_dict[key] = value
 
 
 def decode_val_from_str(
-    value,
-    list_separators=[' ', ', ', ','],
-    list_start_symbol='[',
-    list_end_symbol=']'
+    value, list_separators=[" ", ", ", ","], list_start_symbol="[", list_end_symbol="]"
 ):
-
     if isinstance(value, str):
         value = value.strip()
     else:
         return value
 
     if str_is_number(value):
-
         value = parse_float_or_int_from_string(value)
 
-    elif (
-        len(value) > 1
-            and (value[0] == list_start_symbol
-            or value[-1] == list_end_symbol)
-    ):
+    elif len(value) > 1 and (value[0] == list_start_symbol or value[-1] == list_end_symbol):
         # Parse a list. First remove repeated spaces etc
-        value = value.replace('  ', ' ').replace('[ ', '[').replace(' ]', ']')
+        value = value.replace("  ", " ").replace("[ ", "[").replace(" ]", "]")
 
         assert (
-            value[0] == list_start_symbol
-                and value[-1] == list_end_symbol
+            value[0] == list_start_symbol and value[-1] == list_end_symbol
         ), f"Possibly incomplete list expression: {value}"
 
         value = parse_list_from_string(
             value,
             list_separators=list_separators,
             list_start_symbol=list_start_symbol,
-            list_end_symbol=list_end_symbol
+            list_end_symbol=list_end_symbol,
         )
 
-    elif (
-        value in itself_and_lower_upper_case("None")
-            or value in itself_and_lower_upper_case("Null")
+    elif value in itself_and_lower_upper_case("None") or value in itself_and_lower_upper_case(
+        "Null"
     ):
         value = None
 
@@ -1042,21 +904,13 @@ def decode_val_from_str(
     return value
 
 
-def replace_many_by_one(
-    input_string,
-    items_to_replace,
-    value_to_insert
-):
+def replace_many_by_one(input_string, items_to_replace, value_to_insert):
     # TODO(Alex | 25.02.2023) do in O(n) with regex
     for item_to_replace in items_to_replace:
-
         if item_to_replace == value_to_insert:
             continue
 
-        input_string = input_string.replace(
-            item_to_replace,
-            value_to_insert
-        )
+        input_string = input_string.replace(item_to_replace, value_to_insert)
 
     return input_string
 
@@ -1069,14 +923,14 @@ def str_is_number(input_str):
     for i in range(len(input_str)):
         if input_str[i].isdigit():
             continue
-        if input_str[i] == '-':
+        if input_str[i] == "-":
             if i == 0:
                 continue
-            elif exponential and input_str[i - 1] == 'e':
+            elif exponential and input_str[i - 1] == "e":
                 continue
-        if input_str[i] == '+' and exponential and input_str[i - 1] == 'e':
+        if input_str[i] == "+" and exponential and input_str[i - 1] == "e":
             continue
-        if input_str[i] == 'e' and not exponential:
+        if input_str[i] == "e" and not exponential:
             exponential = True
             continue
         if input_str[i] == FLOATING_POINT and not has_floating_point:
@@ -1091,12 +945,12 @@ def str_is_number(input_str):
 
 
 def parse_float_or_int_from_string(value_as_str):
-    try: # Try to parse as float
+    try:  # Try to parse as float
         return ast.literal_eval(value_as_str)
     except Exception as e:
         print(f"Error: {value_as_str} is not a valid float or int")
         raise e
-        
+
     if FLOATING_POINT in value_as_str:
         return float(value_as_str)
     else:
@@ -1111,46 +965,32 @@ def parse_list_from_string(
     value_as_str,
     list_separators,
     list_start_symbol=LIST_START_SYMBOL,
-    list_end_symbol=LIST_END_SYMBOL
+    list_end_symbol=LIST_END_SYMBOL,
 ):
-
     assert len(list_separators)
     assert len(value_as_str) > 1
-    assert (
-        value_as_str[0] == list_start_symbol
-            and value_as_str[-1] == list_end_symbol
-    )
+    assert value_as_str[0] == list_start_symbol and value_as_str[-1] == list_end_symbol
 
     if len(value_as_str) == 2:
         return []
     else:
-
         value_as_str = value_as_str[1:-1]
 
-        replace_many_by_one(
-            value_as_str,
-            list_separators,
-            list_separators[0]
-        )
+        replace_many_by_one(value_as_str, list_separators, list_separators[0])
 
         value_as_str = re.sub(
-            f"({escape_all_chars_in_string(list_separators[0])})+",
-            list_separators[0],
-            value_as_str
+            f"({escape_all_chars_in_string(list_separators[0])})+", list_separators[0], value_as_str
         )
 
         result_list = value_as_str.split(list_separators[0])
 
         for i in range(len(result_list)):
-
             result_list[i] = decode_val_from_str(
-                result_list[i],
-                list_separators,
-                list_start_symbol,
-                list_end_symbol
+                result_list[i], list_separators, list_start_symbol, list_end_symbol
             )
 
         return result_list
+
 
 def parse_list_cell(cell):
     """Parse a cell containing a list."""
@@ -1162,25 +1002,25 @@ def parse_list_cell(cell):
         asd = 123
     return cell
 
+
 def read_csv_as_dict(
     csv_path,
     delimeter=DELIMETER,
     quotechar=QUOTE_CHAR,
     quoting=csv.QUOTE_NONE,
     escapechar=ESCAPE_CHAR,
-    doublequote=True
+    doublequote=True,
 ):
-
     result = {}
 
-    with open(csv_path, newline='') as input_csv:
+    with open(csv_path, newline="") as input_csv:
         csv_reader = csv.DictReader(
             input_csv,
             delimiter=delimeter,
             quotechar=quotechar,
             quoting=quoting,
             escapechar=escapechar,
-            doublequote=doublequote
+            doublequote=doublequote,
         )
 
         result[0] = {}
@@ -1205,16 +1045,16 @@ def normalize_path(path, current_dir=None):
         current_dir = get_project_root_path()
     if path is None:
         return None
-    assert isinstance(path, str)
+    assert isinstance(path, str), f"`path` is not str, path: {path} (of type {type(path)}"
     assert path
     path = os.path.expanduser(path)
-    if path[0] == '.':
+    if path[0] == ".":
         path = os.path.join(current_dir, path)
     return os.path.abspath(path)
 
 
 def read_json(json_path):
-    with open(json_path, 'r') as f:
+    with open(json_path, "r") as f:
         json_contents = json.load(f)
         return json_contents
 
@@ -1301,12 +1141,7 @@ def bootstrap_by_key_subname(input_dict, subname_to_bootstrap):
         input_dict[key] = new_value
 
 
-def find_by_subkey(
-    iterable,
-    subkey,
-    assert_found=False,
-    only_first_occurence=True
-):
+def find_by_subkey(iterable, subkey, assert_found=False, only_first_occurence=True):
     result = []
     for key in iterable:
         if isinstance(key, str) and subkey in key:
@@ -1319,8 +1154,7 @@ def find_by_subkey(
         return result
 
     if assert_found:
-        assert False, \
-            "Key with subkey {} wasn't found in {}.".format(subkey, iterable)
+        assert False, "Key with subkey {} wasn't found in {}.".format(subkey, iterable)
 
     return None
 
@@ -1330,7 +1164,6 @@ def get_system_root_path():
 
 
 def prepare_factory_without_args(func, **kwargs):
-
     def factory_without_args():
         return func(**kwargs)
 
@@ -1347,22 +1180,20 @@ def retrier_factory(
     final_func=raise_func,
     max_retries=DEFAULT_NUM_ATTEMTPS,
     sleep_time=DEFAULT_SLEEP_TIME,
-    infer_logger_from_args=None
+    infer_logger_from_args=None,
 ):
-
     assert (
-            logger != "auto" and infer_logger_from_args is None
-        or
-            logger == "auto" and infer_logger_from_args is not None
-    ), "Provide \"infer_logger_from_args\" iff \"logger == auto\""
+        logger != "auto"
+        and infer_logger_from_args is None
+        or logger == "auto"
+        and infer_logger_from_args is not None
+    ), 'Provide "infer_logger_from_args" iff "logger == auto"'
 
     def retrier(func):
-
         # without this line logger is not seen in wrapped_func
         logger_in_retrier = logger
 
         def wrapped_func(*args, **kwargs):
-
             logger = logger_in_retrier
 
             if logger == "auto":
@@ -1382,16 +1213,10 @@ def retrier_factory(
                         retry_print = logger.retry_print
                         logger.retry_print = False
                     retrying_msg = "{}\nRetrying {}: {}/{}.\n\n".format(
-                        traceback.format_exc(),
-                        func.__name__,
-                        num_attempts,
-                        max_retries
+                        traceback.format_exc(), func.__name__, num_attempts, max_retries
                     )
                     try:
-                        error_or_print(
-                            retrying_msg,
-                            logger
-                        )
+                        error_or_print(retrying_msg, logger)
                     except:
                         print(retrying_msg)
                     if retry_print is not None:
@@ -1412,17 +1237,12 @@ class SetEncoder(json.JSONEncoder):
 
 # from: https://www.tensorflow.org/tensorboard/text_summaries
 def pretty_json(hp, cls=SetEncoder, default=str):
-    json_hp = json.dumps(
-        hp,
-        indent=DEFAULT_INDENT_IN_JSON,
-        cls=cls,
-        default=default
-    )
+    json_hp = json.dumps(hp, indent=DEFAULT_INDENT_IN_JSON, cls=cls, default=default)
     return "".join("\t" + line for line in json_hp.splitlines(True))
 
 
 def touch_file(file_path):
-    open(file_path, 'a').close()
+    open(file_path, "a").close()
     return file_path
 
 
@@ -1435,10 +1255,7 @@ def touch_file(file_path):
 def kill_processes(processes_to_kill, logger=None):
     for process_to_kill in processes_to_kill:
         try:
-            os.kill(
-                process_to_kill,
-                signal.SIGTERM
-            )
+            os.kill(process_to_kill, signal.SIGTERM)
         except Exception:
             error_or_print(traceback.format_exc(), logger)
 
@@ -1463,7 +1280,6 @@ def make_file_lock(file_name):
 
 
 def check_duplicates(input_list):
-
     counter_dict = dict(Counter(input_list))
     if max(counter_dict.values()) > 1:
         raise Exception(f"Duplicates in:\n{input_list}\nCounts:\n{counter_dict}")
@@ -1474,12 +1290,8 @@ def has_nested_attr(object, nested_attr):
     if len(nested_attr) == 1:
         return hasattr(object, nested_attr[0])
     else:
-        return (
-            hasattr(object, nested_attr[0])
-                and has_nested_attr(
-                    getattr(object, nested_attr[0]),
-                    nested_attr[1:]
-                )
+        return hasattr(object, nested_attr[0]) and has_nested_attr(
+            getattr(object, nested_attr[0]), nested_attr[1:]
         )
 
 
@@ -1488,9 +1300,7 @@ def get_nested_attr(object, nested_attr):
     if len(nested_attr) == 1:
         return getattr(object, nested_attr[0])
     else:
-        return (
-            get_nested_attr(getattr(object, nested_attr[0]), nested_attr[1:])
-        )
+        return get_nested_attr(getattr(object, nested_attr[0]), nested_attr[1:])
 
 
 def set_nested_attr(object, nested_attr, value):
@@ -1502,7 +1312,6 @@ def set_nested_attr(object, nested_attr, value):
 
 
 def write_csv_dict_to_csv(dict_from_csv, csv_file, **kwargs):
-
     if os.path.exists(csv_file):
         remove_file_or_folder(csv_file)
 
@@ -1513,26 +1322,20 @@ def write_csv_dict_to_csv(dict_from_csv, csv_file, **kwargs):
             continue
         for i, (column_name, value) in enumerate(row_as_dict.items()):
             write_into_csv_with_column_names(
-                csv_file,
-                row_number,
-                column_name,
-                value,
-                append_row=(i == 0),
-                **kwargs
+                csv_file, row_number, column_name, value, append_row=(i == 0), **kwargs
             )
 
 
 def expand_csv(
     csv_to_expand,
     expanded_csv,
-    expansion_start_symbol='{',
-    expansion_end_symbol='}',
+    expansion_start_symbol="{",
+    expansion_end_symbol="}",
     expansion_delimeter=" | ",
-    range_start_symbol='<',
-    range_end_symbol='>',
-    range_delimeter=' '
+    range_start_symbol="<",
+    range_end_symbol=">",
+    range_delimeter=" ",
 ):
-
     def expand_row(
         row_as_dict,
         expansion_start_symbol,
@@ -1540,15 +1343,13 @@ def expand_csv(
         expansion_delimeter,
         range_start_symbol,
         range_end_symbol,
-        range_delimeter
+        range_delimeter,
     ):
-
         def build_range(range_as_str, range_delimeter):
             range_as_str_split = range_as_str.split(range_delimeter)
             assert len(range_as_str_split) == 4
             for i in range(len(range_as_str_split)):
-                range_as_str_split[i] \
-                    = decode_val_from_str(range_as_str_split[i])
+                range_as_str_split[i] = decode_val_from_str(range_as_str_split[i])
 
             start = range_as_str_split[0]
             end = range_as_str_split[1]
@@ -1556,11 +1357,9 @@ def expand_csv(
             log_scale = range_as_str_split[3]
             result = []
 
-            assert step > 1 if log_scale else step > 0, \
-                "Range should be increasing"
+            assert step > 1 if log_scale else step > 0, "Range should be increasing"
 
             while start < end:
-
                 result.append(start)
 
                 if log_scale:
@@ -1577,9 +1376,9 @@ def expand_csv(
                 value = value.strip()
             if (
                 isinstance(value, str)
-                    and len(value) >= 2
-                    and value[0] == expansion_start_symbol
-                    and value[-1] == expansion_end_symbol
+                and len(value) >= 2
+                and value[0] == expansion_start_symbol
+                and value[-1] == expansion_end_symbol
             ):
                 if (
                     len(value) >= 4
@@ -1587,24 +1386,22 @@ def expand_csv(
                     and value[-2] == range_end_symbol
                 ):
                     assert len(value) > 4, "Empty range expression"
-                    assert range_delimeter in value, \
-                        f"Range expression without range delimeter {value}"
+                    assert (
+                        range_delimeter in value
+                    ), f"Range expression without range delimeter {value}"
                     value = (
                         expansion_start_symbol
-                            + expansion_delimeter.join(
-                                str(el) for el in build_range(
-                                    value[2:-2],
-                                    range_delimeter
-                                )
-                            )
-                            + expansion_end_symbol
+                        + expansion_delimeter.join(
+                            str(el) for el in build_range(value[2:-2], range_delimeter)
+                        )
+                        + expansion_end_symbol
                     )
 
                 row_as_dict[key] = parse_list_from_string(
                     value,
                     [expansion_delimeter],
                     list_start_symbol=expansion_start_symbol,
-                    list_end_symbol=expansion_end_symbol
+                    list_end_symbol=expansion_end_symbol,
                 )
             else:
                 row_as_dict[key] = [value]
@@ -1622,7 +1419,6 @@ def expand_csv(
     final_row_id = 0
 
     for row_as_dict in dict_to_expand.values():
-
         expanded_rows = expand_row(
             row_as_dict,
             expansion_start_symbol=expansion_start_symbol,
@@ -1630,7 +1426,7 @@ def expand_csv(
             expansion_delimeter=expansion_delimeter,
             range_start_symbol=range_start_symbol,
             range_end_symbol=range_end_symbol,
-            range_delimeter=range_delimeter
+            range_delimeter=range_delimeter,
         )
         for row in expanded_rows:
             expanded_dict[final_row_id] = row
@@ -1648,7 +1444,6 @@ def instantiate_from_config(config, object_key_in_config, make_func, logger):
 
 
 class TimeStampEventHandler(FileSystemEventHandler):
-
     def __init__(self):
         super(TimeStampEventHandler, self).__init__()
         self.update_time()
@@ -1660,9 +1455,7 @@ class TimeStampEventHandler(FileSystemEventHandler):
         self.last_change_time = get_current_time()
 
     def has_events(self, delta):
-        time_since_last_change = (
-            get_current_time() - self.last_change_time
-        ).total_seconds()
+        time_since_last_change = (get_current_time() - self.last_change_time).total_seconds()
         if time_since_last_change <= delta:
             return True
         else:
@@ -1704,55 +1497,28 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
 
 
 def as_str_for_csv(value, chars_to_remove=[]):
-
     if value is None:
         value = "None"
     value = str(value)
 
     for char in chars_to_remove:
-        value = value.replace(char, '')
+        value = value.replace(char, "")
 
     return value
 
 
-def check_consistency(
-    first,
-    second,
-    first_consistent_group,
-    second_consistent_group
-):
-    def make_msg(
-        first,
-        first_consistent_group,
-        second,
-        second_consistent_group
-    ):
-        return (
-            "{} is from {}, therefore {} "
-            "should be from {}."
-        ).format(
-            first,
-            first_consistent_group,
-            second,
-            second_consistent_group
+def check_consistency(first, second, first_consistent_group, second_consistent_group):
+    def make_msg(first, first_consistent_group, second, second_consistent_group):
+        return ("{} is from {}, therefore {} " "should be from {}.").format(
+            first, first_consistent_group, second, second_consistent_group
         )
 
     try:
         if first in first_consistent_group:
-            exception_msg = make_msg(
-                first,
-                first_consistent_group,
-                second,
-                second_consistent_group
-            )
+            exception_msg = make_msg(first, first_consistent_group, second, second_consistent_group)
             assert second in second_consistent_group
         if second in second_consistent_group:
-            exception_msg = make_msg(
-                second,
-                second_consistent_group,
-                first,
-                first_consistent_group
-            )
+            exception_msg = make_msg(second, second_consistent_group, first, first_consistent_group)
             assert first in first_consistent_group
     except AssertionError as e:
         raise Exception(exception_msg)
@@ -1767,7 +1533,6 @@ def check_consistency(
 
 
 def func_for_dim(func, dim):
-
     def inner_func(*args, **kwargs):
         return func(*args, **kwargs, dim=dim)
 
@@ -1780,6 +1545,7 @@ def parse_name_and_number(name_and_number, separator=NAME_NUMBER_SEPARATOR):
     assert len(split) == 2
     assert is_number(split[-1])
     return split[0], parse_float_or_int_from_string(split[-1])
+
 
 #
 # def show_images(images, label_lists=None):
@@ -1857,38 +1623,28 @@ def prune_list(l, value):
 
 
 def get_with_assert(container, key, error_msg=None):
-
     if error_msg is None:
-        error_msg = f"Key \"{key}\" not in container: {container}"
+        error_msg = f'Key "{key}" not in container: {container}'
 
     assert key in container, error_msg
     return container[key]
 
 
 def properties_diff(first_object, second_object):
-    return (
-        set(first_object.__dict__.keys()).difference(
-            set(second_object.__dict__.keys())
-        )
-    )
+    return set(first_object.__dict__.keys()).difference(set(second_object.__dict__.keys()))
 
 
 def get_even_from_wrapped(giver, wrappable_as_property, property_to_get):
-
     if hasattr(giver, property_to_get):
-        return getattr(
-            giver,
-            property_to_get
-        )
+        return getattr(giver, property_to_get)
     elif hasattr(giver, wrappable_as_property):
         return get_even_from_wrapped(
-            getattr(giver, wrappable_as_property),
-            wrappable_as_property,
-            property_to_get
+            getattr(giver, wrappable_as_property), wrappable_as_property, property_to_get
         )
     return None
 
-def time_since(timestamp_str, format='%Y-%m-%d %H:%M:%S'):
+
+def time_since(timestamp_str, format="%Y-%m-%d %H:%M:%S"):
     now = datetime.now()
     timestamp = datetime.strptime(timestamp_str, format)
     delta = now - timestamp
@@ -1907,21 +1663,23 @@ def time_since(timestamp_str, format='%Y-%m-%d %H:%M:%S'):
         return f"{delta.days // 7}w ago"
     return f"{delta.days // 30}mo ago"
 
+
 def update_gsheet(updater, column_num_status, column_num_last_update_monitor, row_numbers):
     # Update the status column with "Processing"
     for row in row_numbers:
         updater.add_to_queue(row, column_num_status, "Processing")
 
     # Update the last update column with the current timestamp
-    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for row in row_numbers:
         updater.add_to_queue(row, column_num_last_update_monitor, current_time)
 
     # Batch update the cells
     updater.batch_update()
-    
-def dicts_not_equal(dict1 : dict, dict2 : dict) -> bool:
-    """ Returns True if the two dicts are not equal, False otherwise """
+
+
+def dicts_not_equal(dict1: dict, dict2: dict) -> bool:
+    """Returns True if the two dicts are not equal, False otherwise"""
     if len(dict1) != len(dict2):
         return True
 
