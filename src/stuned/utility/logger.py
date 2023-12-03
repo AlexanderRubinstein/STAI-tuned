@@ -57,7 +57,7 @@ import wandb  # slow
 import contextlib
 import time
 import subprocess
-from torch.utils.tensorboard import SummaryWriter  # a bit slow
+# from torch.utils.tensorboard import SummaryWriter  # a bit slow
 import copy
 import gspread  # a bit slow
 import pandas as pd  # slow
