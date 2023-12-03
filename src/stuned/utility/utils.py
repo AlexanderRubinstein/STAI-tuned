@@ -1883,7 +1883,6 @@ def get_with_assert(container, key, error_msg=None):
         return container[key]
 
 
-
 def properties_diff(first_object, second_object, only_local=True):
     if only_local:
         first_object_properties = first_object.__dict__.keys()
