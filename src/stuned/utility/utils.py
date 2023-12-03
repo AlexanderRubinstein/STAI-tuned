@@ -1046,7 +1046,7 @@ def normalize_path(path, current_dir=None):
     if path is None:
         return None
     assert isinstance(path, str), f"`path` is not str, path: {path} (of type {type(path)}"
-    assert path
+    assert path, f"path is {path}"
     path = os.path.expanduser(path)
     if path[0] == ".":
         path = os.path.join(current_dir, path)
