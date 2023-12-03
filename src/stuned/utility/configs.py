@@ -119,8 +119,12 @@ def find_nested_keys_by_keyword_in_config(
 
 def normalize_paths(config, nested_keys, separator=NESTED_CONFIG_KEY_SEPARATOR):
     for key in nested_keys:
-        apply_func_to_dict_by_nested_key(
-            config,
-            key.split(separator),
-            normalize_path
-        )
+        try:
+            apply_func_to_dict_by_nested_key(
+                config,
+                key.split(separator),
+                normalize_path
+            )
+        except Exception as e:
+            print("Failed to normalize path: {}".format(key))
+            raise e
