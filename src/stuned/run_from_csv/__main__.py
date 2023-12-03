@@ -1431,7 +1431,17 @@ def process_csv_row(
         default_config_path_or_url = csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN]
         if not default_config_path_or_url in shared_default_config_paths:
             with lock:
-                default_config_path = fetch_default_config_path(default_config_path_or_url, logger)
+                try:
+                    default_config_path = fetch_default_config_path(
+                        default_config_path_or_url, logger
+                    )
+                except Exception as e:
+                    # log also row number etc
+                    logger.log(
+                        f"Failed to fetch default config path at {default_config_path_or_url}."
+                        f"\nIt occurs in row {row_number} of {input_csv_path}."
+                    )
+                    raise e
                 shared_default_config_paths[default_config_path_or_url] = default_config_path
         else:
             default_config_path = shared_default_config_paths[default_config_path_or_url]
