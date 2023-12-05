@@ -1003,6 +1003,23 @@ def parse_list_cell(cell):
     return cell
 
 
+class SafeCSVReader:
+    def __init__(self, csv_reader):
+        self.csv_reader = csv_reader
+        self.row_number = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            row = next(self.csv_reader)
+            self.row_number += 1
+            return row
+        except csv.Error as e:
+            raise Exception(f"Error in CSV at row {self.row_number + 1}: {e}")
+
+
 def read_csv_as_dict(
     csv_path,
     delimeter=DELIMETER,
@@ -1022,6 +1039,7 @@ def read_csv_as_dict(
             escapechar=escapechar,
             doublequote=doublequote,
         )
+        safe_csv_reader = SafeCSVReader(csv_reader)
 
         result[0] = {}
 
@@ -1031,11 +1049,17 @@ def read_csv_as_dict(
         # for csv_row_number, csv_row in enumerate(csv_reader):
         #     result[csv_row_number + 1] = csv_row
 
-        for csv_row_number, csv_row in enumerate(csv_reader):
-            # Parse cells that contain lists
-            # for key, value in csv_row.items():
-            #     csv_row[key] = parse_list_cell(value)
-            result[csv_row_number + 1] = csv_row
+        try:
+            for csv_row in safe_csv_reader:
+                result[safe_csv_reader.row_number] = csv_row
+        except Exception as e:
+            print(e)
+
+        # for csv_row_number, csv_row in enumerate(csv_reader):
+        #     # Parse cells that contain lists
+        #     # for key, value in csv_row.items():
+        #     #     csv_row[key] = parse_list_cell(value)
+        #     result[csv_row_number + 1] = csv_row
 
     return result
 
