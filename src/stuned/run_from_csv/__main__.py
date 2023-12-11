@@ -141,6 +141,13 @@ def parse_args():
         action="store_true",
         help="whether to disable logging to wandb and g drive for local runs",
     )
+
+    parser.add_argument(
+        "--max_concurrent_jobs",
+        type=int,
+        required=False,
+        help="maximum number of concurrent jobs to run",
+    )
     return parser.parse_args()
 
 
@@ -480,7 +487,7 @@ def monitor_jobs_async(
             shared_jobs_copy = dict(shared_jobs_dict)
         with job_manager.manager_lock:
             """TODO: this can introduce some clashes between status changes; `sacct` should only be used in
-            case the job isn't reachable. Otherwise the stauts should be updated from the job itself.
+            case the job isn't reachable. Otherwise the status should be updated from the job itself.
             """
             jobs_update_status = update_job_statuses_in_place(
                 job_manager, shared_jobs_copy, logger, run_locally
@@ -1065,6 +1072,8 @@ def main_with_monitoring(
 
     args = parse_args()
 
+    max_conc_jobs = -1 if "max_concurrent_jobs" not in args else args.max_concurrent_jobs
+
     use_socket = args.use_socket if args.use_socket is not None else False
     # TODO: give a more descriptive and accurate name
     disable_local_loging = (
@@ -1156,7 +1165,7 @@ def main_with_monitoring(
 
                     concurrent_log_func = retrier_factory()(log_csv_for_concurrent)
 
-                    concurrent_log_func(csv_path, shared_csv_updates)
+                    concurrent_log_func(csv_path, shared_csv_updates, use_socket=True)
 
                     os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
 
@@ -1169,6 +1178,7 @@ def main_with_monitoring(
                             row_id,
                             lock,
                             logger,
+                            max_conc_jobs,
                         )
                         for run_cmd, row_id in zip(shared_rows_to_run, shared_row_numbers)
                     ]
@@ -1229,6 +1239,7 @@ def get_pool_size(iterable_len):
 # TODO: move these into the main function
 run_jobs_flag = mp.Value("i", 1)  # 1 means jobs should run, 0 means they shouldn't
 submitted_jobs = mp.Value("i", 0)
+running_jobs = mp.Value("i", 0)
 submitted_jobs_lock = mp.Lock()
 
 
@@ -1249,7 +1260,16 @@ def update_job_status(process, shared_jobs_dict, row_id, lock_manager, cancelled
         # print(f"After update: {shared_jobs_dict[row_id]}")
 
 
-def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lock_manager, logger):
+def submit_job(
+    run_cmd,
+    log_file_path,
+    run_locally,
+    shared_jobs_dict,
+    row_id,
+    lock_manager,
+    logger,
+    max_conc_jobs=-1,
+):
     """
 
     row_id is used for identifying the job in the spreadsheet and for updating the status of the job in the shared memory.
@@ -1262,6 +1282,13 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
     def signal_handler(sig, frame):
         logger.log("KeyboardInterrupt caught, but continuing...")
 
+    if max_conc_jobs != -1 and not run_locally:
+        raise NotImplementedError("max_conc_jobs is not implemented for SLURM jobs yet.")
+    if run_locally and max_conc_jobs != -1:
+        warnings.warn(
+            "WARNING: when running locally, `max_conc_jobs` only applies to this submission - it doesn't take into account other jobs that might be running. "
+        )
+
     # Register the signal handler
     signal.signal(signal.SIGINT, signal_handler)
 
@@ -1273,6 +1300,10 @@ def submit_job(run_cmd, log_file_path, run_locally, shared_jobs_dict, row_id, lo
                 child_pids = [child.pid for child in psutil.Process(main_pid).children()]
                 return main_pid, child_pids
 
+            while max_conc_jobs != -1 and running_jobs.value >= max_conc_jobs:
+                time.sleep(1)
+
+            running_jobs.value += 1
             split_command = shlex.split(run_cmd)
             process = subprocess.Popen(split_command, stdout=log_file, stderr=log_file, shell=False)
 

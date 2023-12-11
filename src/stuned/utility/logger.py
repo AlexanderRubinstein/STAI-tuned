@@ -105,6 +105,7 @@ from .utils import (
     itself_and_lower_upper_case,
     get_with_assert,
     current_time_formatted,
+    write_into_csv_triples,
 )
 
 # Tensorboard
@@ -1568,26 +1569,44 @@ def read_csv_as_dict_lock(csv_path):
     return csv_as_dict
 
 
-def log_csv_for_concurrent(csv_path, row_col_value_triplets):
+def log_csv_for_concurrent(csv_path, row_col_value_triplets, use_socket=False):
     lock = make_file_lock(csv_path)
     remove_chars = [QUOTE_CHAR]
     row_col_value_triplets_clean = []
-    with lock:
+
+    if use_socket:
+        # Clean and collect the triplets for the new function
         for csv_row_number, column_name, value in row_col_value_triplets:
             column_name = as_str_for_csv(column_name, remove_chars)
             value = as_str_for_csv(value, remove_chars)
             row_col_value_triplets_clean.append((csv_row_number, column_name, value))
 
-            write_into_csv_with_column_names(
-                csv_path,
-                csv_row_number,
-                column_name,
-                value,
-                replace_nulls=True,
-                use_lock=False,
-                lock_to_use=lock,
-            )
-    time.sleep(TIME_TO_LOSE_LOCK_IF_CONCURRENT)
+        # Use the new efficient function to write all triplets at once
+        write_into_csv_triples(
+            csv_path,
+            row_col_value_triplets_clean,
+            replace_nulls=True,
+            use_lock=False,
+            lock_to_use=lock,
+        )
+    else:
+        # leave code the same
+        with lock:
+            for csv_row_number, column_name, value in row_col_value_triplets:
+                column_name = as_str_for_csv(column_name, remove_chars)
+                value = as_str_for_csv(value, remove_chars)
+                row_col_value_triplets_clean.append((csv_row_number, column_name, value))
+
+                write_into_csv_with_column_names(
+                    csv_path,
+                    csv_row_number,
+                    column_name,
+                    value,
+                    replace_nulls=True,
+                    use_lock=False,
+                    lock_to_use=lock,
+                )
+        time.sleep(TIME_TO_LOSE_LOCK_IF_CONCURRENT)
 
     # Do we really need to check??
     # with lock:

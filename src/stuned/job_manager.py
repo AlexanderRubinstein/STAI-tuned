@@ -13,32 +13,34 @@ from typing import List
 
 from stuned.job import Job, find_job_idx
 
+
 def get_my_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         # doesn't even have to be reachable
-        s.connect(('10.254.254.254', 1))
+        s.connect(("10.254.254.254", 1))
         IP = s.getsockname()[0]
     except Exception:
-        IP = '127.0.0.1'
+        IP = "127.0.0.1"
     finally:
         s.close()
     return IP
 
-class JobManager():
+
+class JobManager:
     def __init__(self, local_run, open_socket, logger):
         self.local_run = local_run
         self.logger = logger
-        
+
         self.server_ip = None
         self.server_port = None
-        
+
         self.manager = Manager()
         self.manager_lock = self.manager.Lock()
-        
-        self.jobs : List[Job] = self.manager.list()  # Shared list
+
+        self.jobs: List[Job] = self.manager.list()  # Shared list
         self.open_socket = open_socket
-        
+
         if open_socket:
             self.server_info = self.manager.dict()  # Shared dictionary
             self.queue = self.manager.Queue()  # Shared queue
@@ -51,43 +53,41 @@ class JobManager():
 
             while True:
                 with self.manager_lock:
-                    if 'ip' in self.server_info and 'port' in self.server_info:
+                    if "ip" in self.server_info and "port" in self.server_info:
                         break
                 sleep(1)
-            self.server_ip = self.server_info['ip']
-            self.server_port = self.server_info['port']
-    
+            self.server_ip = self.server_info["ip"]
+            self.server_port = self.server_info["port"]
+
     def process_job_message(self, message):
         """
         Process a message from a job.
-        
+
         args:
-            message (dict): message from a job in JSON format. 
-        
+            message (dict): message from a job in JSON format.
+
         """
         assert "job_id" in message, "Job ID not found in message"
         job_id = message["job_id"]
-        
+
         with self.manager_lock:
             job_idx = find_job_idx(self.jobs, job_id)
             if job_idx is not None:
                 job = self.jobs[job_idx]
             else:
-                self.logger.log(f"Job {job_id} not found")
-                
+                self.logger.log(f"Job {job_id} not found -- creating a new job")
+
                 # Should we create a new job?
                 job = Job(job_id, None, None, None)
                 self.jobs.append(job)
                 job_idx = len(self.jobs) - 1
-                
+
             # Unsure if this will update the job in the list
             job.process_message(message)
-            
-            self.jobs[job_idx] = job
-                
-        
 
-    def handle_client(self, client : socket.socket, queue):
+            self.jobs[job_idx] = job
+
+    def handle_client(self, client: socket.socket, queue):
         with client:
             while True:
                 # Read the first 4 bytes to get the message length
@@ -95,33 +95,34 @@ class JobManager():
                 if not length_data:
                     break
 
-                message_length = int.from_bytes(length_data, 'big')
+                message_length = int.from_bytes(length_data, "big")
 
                 # Read the actual message: `socket.MSG_WAITALL` apparently works only on UNIX systems!
                 data = client.recv(message_length, socket.MSG_WAITALL)
                 if not data:
-                    self.logger.log('Warning: Connection closed by client')
+                    self.logger.log("Warning: Connection closed by client")
                     break
 
                 # Deserialize the message
                 try:
-                    message_obj = json.loads(data.decode('utf-8'))
+                    message_obj = json.loads(data.decode("utf-8"))
                 except:
-                    self.logger.log('Warning: Failed to deserialize message')
-                    self.logger.log(f"Tried to deserialize: {data}\n which decoded to {data.decode('utf-8')}")
+                    self.logger.log("Warning: Failed to deserialize message")
+                    self.logger.log(
+                        f"Tried to deserialize: {data}\n which decoded to {data.decode('utf-8')}"
+                    )
                     break
                 assert "job_id" in message_obj, "Job ID not found in message"
                 assert "messages" in message_obj, "Messages not found in message"
-                
+
                 # Might need to update or add a new job
                 self.process_job_message(message_obj)
 
                 # self.logger.log(f"Received a message from {message_obj['job_id']}")
                 queue.put(message_obj)
-                client.sendall(b'ACK')
+                client.sendall(b"ACK")
 
                 time.sleep(0.01)  # Sleep for 10 milliseconds
-
 
     def run_server(self):
         HOST = get_my_ip()  # Assuming you have this function from the previous example
@@ -133,10 +134,10 @@ class JobManager():
             actual_port = s.getsockname()[1]  # Get the port chosen by the OS
 
             with self.manager_lock:
-                self.server_info['ip'] = HOST
-                self.server_info['port'] = actual_port
+                self.server_info["ip"] = HOST
+                self.server_info["port"] = actual_port
 
-            self.logger.log(f'Server listening on {HOST}:{actual_port}')
+            self.logger.log(f"Server listening on {HOST}:{actual_port}")
 
             while True:
                 client, addr = s.accept()
@@ -144,7 +145,6 @@ class JobManager():
                 # Using threading here to handle multiple clients in the same process
                 threading.Thread(target=self.handle_client, args=(client, self.queue)).start()
 
-            
     def process_messages(self):
         while True:
             if not self.queue.empty():
@@ -155,7 +155,7 @@ class JobManager():
     def stop_server(self):
         if self.server_process:
             self.server_process.terminate()
-            
+
     @property
     def get_running_jobs_count(self):
         pass
@@ -167,4 +167,3 @@ class JobManager():
     @property
     def get_failed_jobs_count(self):
         pass
-

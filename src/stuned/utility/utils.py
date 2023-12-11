@@ -682,6 +682,89 @@ def save_as_yaml(output_file_name, data):
         yaml.dump(data, outfile, default_flow_style=False)
 
 
+def format_free_equal(val1, val2):
+    """Compare two values without considering their format."""
+    return str(val1) == str(val2)
+
+
+def write_into_csv_triples(
+    file_path,
+    triples,
+    delimiter=DELIMETER,
+    quotechar=QUOTE_CHAR,
+    quoting=csv.QUOTE_NONE,
+    escapechar=ESCAPE_CHAR,
+    doublequote=True,
+    replace_nulls=False,
+    use_lock=True,
+    lock_to_use=None,
+):
+    """
+    Same as `write_into_csv_with_column_names` but for triples.
+    Args:
+        triples: list of triples (row_number, column_name, value)
+    """
+
+    tempfile = NamedTemporaryFile("w+t", newline="", delete=False)
+
+    lock = (
+        make_file_lock(file_path)
+        if (lock_to_use is None and use_lock)
+        else lock_to_use
+        if lock_to_use
+        else NULL_CONTEXT
+    )
+
+    with lock:
+        # Read the entire file once and store the content
+        with open(file_path, "r", newline="") as csv_file:
+            reader = csv.reader(
+                ((x.replace("\0", "") for x in csv_file) if replace_nulls else csv_file),
+                delimiter=delimiter,
+                quotechar=quotechar,
+                quoting=quoting,
+                escapechar=escapechar,
+                doublequote=doublequote,
+            )
+            rows = list(reader)
+
+        # Update the rows based on the triples
+        column_index_map = {col: i for i, col in enumerate(rows[0])} if rows else {}
+        max_row_index = len(rows) - 1
+
+        for row_number, column_name, value in triples:
+            # If the column doesn't exist, add it
+            if column_name not in column_index_map:
+                column_index_map[column_name] = len(column_index_map)
+                for row in rows:
+                    row.append(EMPTY_CSV_TOKEN if row != rows[0] else column_name)
+
+            # If the row doesn't exist, add it
+            while row_number > max_row_index:
+                rows.append([EMPTY_CSV_TOKEN] * len(column_index_map))
+                max_row_index += 1
+
+            # Update the cell
+            col_index = column_index_map[column_name]
+            rows[row_number][col_index] = value
+
+        # Write the updated content to a temporary file
+        tempfile = NamedTemporaryFile("w+t", newline="", delete=False)
+        with tempfile:
+            writer = csv.writer(
+                tempfile,
+                delimiter=delimiter,
+                quotechar=quotechar,
+                quoting=quoting,
+                escapechar=escapechar,
+                doublequote=doublequote,
+            )
+            writer.writerows(rows)
+
+        # Replace the original file with the updated file
+        shutil.move(tempfile.name, file_path)
+
+
 def write_into_csv_with_column_names(
     file_path,
     row_number,
