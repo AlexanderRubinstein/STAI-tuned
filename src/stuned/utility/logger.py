@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Dict
 
 import numpy as np
 
@@ -1221,6 +1221,65 @@ class GspreadClient:
         return referenced_worksheet
 
     @retrier_factory_with_auto_logger()
+    def upload_csvs_to_spreadsheet_no_csv(
+        self, current_csv: Dict, spreadsheet_url, worksheet_name, affected_rows
+    ):
+        spreadsheet: gspread.client = self.get_spreadsheet_by_url(spreadsheet_url)
+
+        # Get the sheetId for the worksheet
+        worksheet_obj = spreadsheet.worksheet(worksheet_name)
+        sheet_id = worksheet_obj.id
+
+        rows_to_update = affected_rows
+
+        if not isinstance(rows_to_update, list):
+            rows_to_update = [rows_to_update]
+
+        requests = []
+        # Hacky way to update the header when new columns are added
+        if rows_to_update == [0]:
+            header_data = current_csv[0]
+            a1_range_to_update = f"{worksheet_name}!1:1"
+            spreadsheet.values_update(
+                a1_range_to_update,
+                params={"valueInputOption": "USER_ENTERED"},
+                body={"values": [list(header_data)]},
+            )
+        else:
+            for row_num in rows_to_update:
+                a1_range_to_update = f"{worksheet_name}!{row_num + 1}:{row_num + 1}"
+                values_to_update = [list(current_csv[row_num].values())]
+
+                request = {
+                    "updateCells": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": row_num,
+                            "endRowIndex": row_num + 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": len(values_to_update[0]),
+                        },
+                        "rows": [
+                            {
+                                "values": [
+                                    {"userEnteredValue": {"stringValue": value}}
+                                    for value in values_to_update[0]
+                                ],
+                            }
+                        ],
+                        "fields": "userEnteredValue",
+                    }
+                }
+
+                requests.append(request)
+
+                # Now, batch all the requests together
+            body = {"requests": requests}
+            spreadsheet.batch_update(body)
+
+        return spreadsheet.url
+
+    @retrier_factory_with_auto_logger()
     def upload_csvs_to_spreadsheet(
         self, spreadsheet_url, csv_files, worksheet_names=None, single_rows_per_csv=None
     ):
@@ -1261,9 +1320,9 @@ class GspreadClient:
             csv_file_path = csv_files[i]
             worksheet_name = worksheet_names[i]
 
-            single_row = None
-            if single_rows_per_csv is not None:
-                single_row = single_rows_per_csv[i]
+            # single_row = None
+            # if single_rows_per_csv is not None:
+            #     single_row = single_rows_per_csv[i]
 
             with make_file_lock(csv_file_path):
                 if worksheet_name not in existing_worksheets:

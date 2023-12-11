@@ -19,6 +19,7 @@ class GSheetBatchUpdater:
         gsheet_client: gspread.client,
         logger,
         csv_path,
+        input_csv,
         update_interval=10,
     ):
         self.spreadsheet_url = spreadsheet_url
@@ -37,13 +38,23 @@ class GSheetBatchUpdater:
 
         # We also get the local csv. we use it for periodically checking for updates in csv so that we can report them globally
         # instead of relying on individual processes to report the changes. Note that we need to take only the rows that acutally changed
-        self.local_csv = None
+        self.local_csv = input_csv
+
+        # order-preserving list of column names
+        self.col_names = list(self.local_csv[0])
 
     def add_to_queue(self, row, col, value):
         """Add an update to the queue."""
         self.queue[row][
             col
         ] = value  # This will set the value for the specific column in the specific row
+
+        # if column isn't in the local csv, add it and mark all other rows as empty value there
+        if col not in self.col_names:
+            self.col_names.append(col)
+            for row_id in self.local_csv:
+                if col not in self.local_csv[row_id]:
+                    self.local_csv[row_id][col] = ""
 
     def batch_update(self, force=False):
         """Batch update the Google Sheet with the queued changes."""
@@ -63,52 +74,77 @@ class GSheetBatchUpdater:
                     self.local_csv is not None
                     and row in self.local_csv
                     and col in self.local_csv[row]
-                    and format_free_equal(self.local_csv[row][col], value)
+                    and (format_free_equal(self.local_csv[row][col], value))
                 ):
                     continue
                 report_csv_updates.append((row, col, value))
+                # update local csv
+                self.local_csv[row][col] = value
 
         # Make sure to also update the "last update" time
         # for row, col_value_dict in self.queue.items():
         #     col_value_dict[MONITOR_LAST_UPDATE_COLUMN] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         # Use retrier_factory to log the updates to the CSV
-        try:
-            final_csv = retrier_factory(self.logger)(log_csv_for_concurrent)(
-                self.csv_path, report_csv_updates, use_socket=True
-            )
-        except Exception as e:
-            self.logger.log(f"Exception while logging to CSV: {e}")
-            # don't clear the queue if logging to CSV failed
-            # we can retry later
-            self.logger.log("Not clearing the queue, will repeat later?")
-            self.last_update_status = False
-            return False
+        # try:
+        #     if self.local_csv is None:
+        #         final_csv = retrier_factory(self.logger)(log_csv_for_concurrent)(
+        #             self.csv_path, report_csv_updates, use_socket=True
+        #         )
+        #
+        #         self.local_csv = final_csv
+        # except Exception as e:
+        #     self.logger.log(f"Exception while logging to CSV: {e}")
+        #     # don't clear the queue if logging to CSV failed
+        #     # we can retry later
+        #     self.logger.log("Not clearing the queue, will repeat later?")
+        #     self.last_update_status = False
+        #     return False
 
         affected_rows = list(self.queue.keys())
 
-        if self.local_csv is None:
-            self.local_csv = final_csv
-        else:
-            # update only the rows that were affected in the queue
-            for affected_row in affected_rows:
-                self.local_csv[affected_row] = final_csv[affected_row]
+        # if self.local_csv is None:
+        #     self.local_csv = final_csv
+        # else:
+        #     # update only the rows that were affected in the queue --> no need to write stuff to csv
+        #     for affected_row in affected_rows:
+        #         self.local_csv[affected_row] = final_csv[affected_row]
 
         # Update the Google Sheet using our gsheet client
         try:
             # TODO: only update if there are changes in columns
-            self.gsheet_client.upload_csvs_to_spreadsheet(
-                self.spreadsheet_url,
-                [self.csv_path],
-                [self.worksheet_name],
-                single_rows_per_csv=[[0]],
-            )
-            self.gsheet_client.upload_csvs_to_spreadsheet(
-                self.spreadsheet_url,
-                [self.csv_path],
-                [self.worksheet_name],
-                single_rows_per_csv=[affected_rows],
-            )
+
+            # Old way: use Alex's code
+            # self.gsheet_client.upload_csvs_to_spreadsheet(
+            #     self.spreadsheet_url,
+            #     [self.csv_path],
+            #     [self.worksheet_name],
+            #     single_rows_per_csv=[[0]],
+            # )
+            # self.gsheet_client.upload_csvs_to_spreadsheet(
+            #     self.spreadsheet_url,
+            #     [self.csv_path],
+            #     [self.worksheet_name],
+            #     single_rows_per_csv=[affected_rows],
+            # )
+            # Check if the columns have changed
+            if 0 not in affected_rows:
+                self.gsheet_client.upload_csvs_to_spreadsheet_no_csv(
+                    self.local_csv,
+                    self.spreadsheet_url,
+                    self.worksheet_name,
+                    affected_rows=[0],
+                )
+            # update all other stuff
+            if len(affected_rows) > 1:
+                self.gsheet_client.upload_csvs_to_spreadsheet_no_csv(
+                    self.local_csv,
+                    self.spreadsheet_url,
+                    self.worksheet_name,
+                    affected_rows=affected_rows,
+                )
+            # New way: don't rely on csvs: use dict directly
+
         except Exception as e:
             self.logger.log(f"Exception while uploading to GSheet: {e}")
             self.logger.log("Will repeat later?")

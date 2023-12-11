@@ -390,6 +390,7 @@ def monitor_jobs_async(
     gsheet_client: GspreadClient,
     lock_manager,
     n_jobs_total,
+    input_csv,
 ):
     # Prepare google client for writing the updates. The mechanism of writing the updates here is different
     # from the individual jobs. Here we write the updates "globally" to the worksheet as opposed to a local csv file.
@@ -416,7 +417,7 @@ def monitor_jobs_async(
         warn("No csv file provided, skipping writing to a csv file.")
     else:
         gsheet_updater = GSheetBatchUpdater(
-            spreadsheet_url, worksheet_name, gsheet_client, logger, csv_path
+            spreadsheet_url, worksheet_name, gsheet_client, logger, csv_path, input_csv
         )
         # get cols from gsheet_client using the `worksheet_name`
         worksheet = gsheet_client.opened_spreadsheet.worksheet(worksheet_name)
@@ -1210,6 +1211,7 @@ def main_with_monitoring(
                         gspread_client,
                         lock,
                         len(starmap_args_for_job_submitting),
+                        inputs_csv,
                     )
             # Print all IDs
             # logger.log(f"Len of spawned jobs: {len(shared_job_objs)}")
