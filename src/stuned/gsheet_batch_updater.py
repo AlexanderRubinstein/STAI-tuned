@@ -68,6 +68,7 @@ class GSheetBatchUpdater:
         #                     col_value_dict.items()]
         # Rewrite the above in a full loop
         report_csv_updates = []
+        affected_rows = set()
         for row, col_value_dict in self.queue.items():
             for col, value in col_value_dict.items():
                 if (
@@ -78,9 +79,10 @@ class GSheetBatchUpdater:
                 ):
                     continue
                 report_csv_updates.append((row, col, value))
+                affected_rows.add(row)
                 # update local csv
                 self.local_csv[row][col] = value
-
+        affected_rows = list(affected_rows)
         # Make sure to also update the "last update" time
         # for row, col_value_dict in self.queue.items():
         #     col_value_dict[MONITOR_LAST_UPDATE_COLUMN] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -100,8 +102,6 @@ class GSheetBatchUpdater:
         #     self.logger.log("Not clearing the queue, will repeat later?")
         #     self.last_update_status = False
         #     return False
-
-        affected_rows = list(self.queue.keys())
 
         # if self.local_csv is None:
         #     self.local_csv = final_csv
@@ -147,7 +147,7 @@ class GSheetBatchUpdater:
 
         except Exception as e:
             self.logger.log(f"Exception while uploading to GSheet: {e}")
-            self.logger.log("Will repeat later?")
+            self.logger.log("Will repeat later...")
             self.last_update_status = False
             return False
         self.queue.clear()  # Clear the queue after updating

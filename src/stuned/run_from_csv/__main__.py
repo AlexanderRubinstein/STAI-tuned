@@ -532,10 +532,10 @@ def monitor_jobs_async(
         if gsheet_updater is not None:
             gsheet_updater.batch_update()
 
-            if not job_manager.open_socket and (
-                time.time() - last_full_check_time > check_for_full_updates_every
-            ):
-                gsheet_updater.update_remote_if_changes_happened()
+            # if not job_manager.open_socket and (
+            #     time.time() - last_full_check_time > check_for_full_updates_every
+            # ):
+            #     gsheet_updater.update_remote_if_changes_happened()
 
         time.sleep(current_sleep_duration)
 
@@ -629,7 +629,7 @@ def monitor_jobs_async(
     sys.exit(0)
 
 
-def dump_into_gsheet_queue(gsheet_updater, job_manager):
+def dump_into_gsheet_queue(gsheet_updater, job_manager: JobManager):
     for idx, job in enumerate(job_manager.jobs):
         if job.updated:
             gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_STATUS_COLUMN, job.job_status)
@@ -648,8 +648,12 @@ def dump_into_gsheet_queue(gsheet_updater, job_manager):
             # check the queue of each job too
             for q_item in job.writing_queue:
                 gsheet_updater.add_to_queue(job.csv_row_id, q_item[0], q_item[1])
-            job_manager.jobs[idx].writing_queue = []
-            job_manager.jobs[idx].updated = False
+            # job_manager.jobs[idx].writing_queue = []
+            # job_manager.jobs[idx].updated = False
+            job.writing_queue = []
+            job.updated = False
+
+            job_manager.jobs[idx] = job
 
 
 # def monitor_jobs_async_old(async_results, shared_memory_names_or_pids, run_locally : bool, logger, spreadsheet_url, worksheet_name : str,
