@@ -94,7 +94,7 @@ class MessageClient:
                 self.logger.log(f"Attempted to log: \n {message_str}")
                 print(f"Error: {e}. Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
-                logger.log("Reconnecting...")
+                # logger.log("Reconnecting...")
                 self.connect(force_reconnect=True)  # Try to reconnect
 
         self.logger.log("Failed to send messages after multiple retries.")
