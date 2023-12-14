@@ -128,7 +128,7 @@ class GSheetBatchUpdater:
             #     single_rows_per_csv=[affected_rows],
             # )
             # Check if the columns have changed
-            if 0 in affected_rows:
+            if 0 in affected_rows or "0" in affected_rows:
                 self.gsheet_client.upload_csvs_to_spreadsheet_no_csv(
                     self.local_csv,
                     self.spreadsheet_url,
