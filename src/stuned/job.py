@@ -36,7 +36,7 @@ def get_slurm_job_status(slurm_status: str) -> str:
     elif slurm_status in JobStatus.slurm_timeout_statuses:
         job_status = JobStatus.TIMEOUT
     else:
-        job_status = JobStatus.UNKNOWN + "_" + slurm_status
+        job_status = JobStatus.UNKNOWN + "_" + (slurm_status or "None")
     return job_status
 
 
