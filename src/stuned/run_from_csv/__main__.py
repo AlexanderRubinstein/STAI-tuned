@@ -79,7 +79,7 @@ PATH_TO_DEFAULT_CONFIG_COLUMN = "path_to_default_config"
 MAIN_PATH_COLUMN = "path_to_main"
 DEV_NULL = "/dev/null"
 DEFAULT_SLURM_ARGS_DICT = {
-    "partition": "gpu-2080ti-beegfs",
+    # "partition": "gpu-2080ti-beegfs",
     "gpus": 1,
     "time": "06:00:00",
     "ntasks": 1,
