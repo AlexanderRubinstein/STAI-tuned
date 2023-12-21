@@ -311,6 +311,8 @@ def get_slurm_jobs_stats(jobs_ids, logger):
         # Check if the line contains the main job info (not the steps)
         if len(columns) == 3 and "+" not in columns[0]:
             job_id, state, exit_code = columns
+            # check if str exists, extact ints only from job_id all ints not just sub
+            job_id = int(re.sub("[^0-9]", "", job_id))
             job_stats[int(job_id)] = {"State": state, "ExitCode": exit_code}
 
     return job_stats
@@ -1525,6 +1527,9 @@ def process_csv_row(
         if run_locally:
             # final_cmd = "{} &> {}".format(cmd_as_string, log_file_path)
             final_cmd = "{}".format(cmd_as_string)
+            # print(
+            #     f"the command would be {make_final_cmd(csv_row, exp_name, log_file_path, cmd_as_string)}"
+            # )
         else:
             final_cmd = make_final_cmd(csv_row, exp_name, log_file_path, cmd_as_string)
 
