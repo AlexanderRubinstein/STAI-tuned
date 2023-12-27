@@ -1425,7 +1425,10 @@ def fetch_default_config_path(path, logger):
         return file_path
 
     else:
-        return normalize_path(path)
+        try:
+            return normalize_path(path)
+        except Exception as e:
+            logger.log(f"Couldn't fetch default config path at {path}!")
 
 
 def get_default_configs_folder():
