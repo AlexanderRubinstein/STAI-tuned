@@ -1461,7 +1461,7 @@ def process_csv_row(
         "`worksheet_name` is None but this is not allowed when remote sheet is used;"
         "Make sure to pass the worksheet name using the `::` syntax in the --csv_path argument."
     )
-
+    default_config_path = None
     final_cmd = None
 
     whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
