@@ -1461,7 +1461,7 @@ def process_csv_row(
         "`worksheet_name` is None but this is not allowed when remote sheet is used;"
         "Make sure to pass the worksheet name using the `::` syntax in the --csv_path argument."
     )
-    default_config_path = None
+    default_config_path = ""
     final_cmd = None
 
     whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
@@ -1487,7 +1487,11 @@ def process_csv_row(
                 shared_default_config_paths[default_config_path_or_url] = default_config_path
         else:
             default_config_path = shared_default_config_paths[default_config_path_or_url]
-
+        if default_config_path is None:
+            logger.log(
+                f"Default config path at {default_config_path_or_url} is None at {row_number} of {input_csv_path}."
+            )
+            raise
         if not os.path.exists(default_config_path):
             logger.log(
                 f"Default config path at {default_config_path} does not exist at {row_number} of {input_csv_path}."
