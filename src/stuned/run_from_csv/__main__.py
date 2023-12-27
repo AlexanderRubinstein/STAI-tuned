@@ -1488,9 +1488,11 @@ def process_csv_row(
         else:
             default_config_path = shared_default_config_paths[default_config_path_or_url]
 
-        assert os.path.exists(
-            default_config_path
-        ), f"Default config path at {default_config_path} does not exist. (error at row {row_number} of {input_csv_path})"
+        if not os.path.exists(default_config_path):
+            logger.log(
+                f"Default config path at {default_config_path} does not exist at {row_number} of {input_csv_path}."
+            )
+            raise
 
         exp_dir = normalize_path(os.path.dirname(default_config_path))
         exp_name = os.path.basename(exp_dir)
