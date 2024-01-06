@@ -18,6 +18,9 @@ from typing import (
     List,
     Callable
 )
+from collections import UserDict
+import warnings
+import gc
 
 
 # local modules
@@ -31,6 +34,7 @@ from utility.utils import (
     compute_file_hash,
     get_hash,
     log_or_print,
+    error_or_print,
     get_project_root_path,
     prepare_for_pickling,
     randomly_subsample_indices_uniformly,
@@ -66,6 +70,9 @@ VAL_KEY = "val"
 
 
 SCALING_FACTOR = 255
+
+
+FINGERPRINT_ATTR = "_object_fingerprint_for_reading_from_cache"
 
 
 class DatasetWrapperWithTransforms(torch.utils.data.Dataset):
@@ -202,11 +209,12 @@ def do_fetch_dataset_as_file(url):
     ):
         if url == EMPTY_URL:
             NotImplementedError()
-        logger.log(
+        log_or_print(
             "Downloading \"{}\" into {}..".format(
                 dataset_name,
                 dataset_path
             ),
+            logger=logger,
             auto_newline=True
         )
         download_file_by_link(url, dataset_path)
@@ -362,52 +370,87 @@ def get_dataloader_init_args_from_existing_dataloader(
 def default_pickle_load(path):
     return load_from_pickle(path)
 
+
+def default_pickle_save(obj, path):
+    prepare_for_pickling(obj)
+    with open(path, "wb") as f:
+        pickle.dump(obj, f)
+
+
 def make_or_load_from_cache(
     object_name,
     object_config,
     make_func,
     load_func=default_pickle_load,
+    save_func=default_pickle_save,
     cache_path=make_default_cache_path(),
     forward_cache_path=False,
-    logger=make_logger(),
-    unique_hash=None
+    logger=None,
+    unique_hash=None,
+    verbose=False
 ):
+
+    def update_object_fingerprint_attr(result, object_fingerprint):
+
+        if isinstance(result, dict):
+            result = UserDict(result)
+
+        setattr(result, FINGERPRINT_ATTR, object_fingerprint)
+        return result
+
+    if unique_hash is None:
+        unique_hash = get_hash(object_config)
+
+    object_fingerprint = "{}_{}".format(object_name, unique_hash)
+
+    objects_with_the_same_fingerprint = extract_from_gc_by_attribute(
+        FINGERPRINT_ATTR,
+        object_fingerprint
+    )
+
+    if len(objects_with_the_same_fingerprint) > 0:
+        if verbose:
+            log_or_print(
+                "Reusing object from RAM with fingerprint {}".format(
+                    object_fingerprint
+                ),
+                logger=logger
+            )
+        return objects_with_the_same_fingerprint[0]
 
     if cache_path is None:
         cache_fullpath = None
     else:
-        # TODO(Alex | 04.05.2023) keep this after update
-        if unique_hash is None:
-            unique_hash = get_hash(object_config)
         os.makedirs(cache_path, exist_ok=True)
         cache_fullpath = os.path.join(
             cache_path,
-            "{}_{}.pkl".format(
-                object_name,
-                unique_hash
-            )
+            "{}.pkl".format(object_fingerprint)
         )
 
     if cache_fullpath and os.path.exists(cache_fullpath):
-        log_or_print(
-            "Loading cached {} from {}".format(
-                object_name,
-                cache_fullpath
-            ),
-            logger=logger,
-            auto_newline=True
-        )
+        if verbose:
+            log_or_print(
+                "Loading cached {} from {}".format(
+                    object_name,
+                    cache_fullpath
+                ),
+                logger=logger,
+                auto_newline=True
+            )
 
         try:
             result = load_func(cache_fullpath)
-            # TODO(Alex | 22.02.2023) Move to load_func like in UT-TML repo
+            # TODO(Alex | 22.02.2023) Remove this once logger is global
             if hasattr(result, "logger"):
                 result.logger = logger
             return result
         except:
-            logger.error("Could not load object from {}\nReason:\n{}".format(
-                cache_fullpath,
-                traceback.format_exc())
+            error_or_print(
+                "Could not load object from {}\nReason:\n{}".format(
+                    cache_fullpath,
+                    traceback.format_exc()
+                ),
+                logger=logger
             )
 
     if forward_cache_path:
@@ -424,19 +467,18 @@ def make_or_load_from_cache(
 
     if cache_fullpath:
         try:
-            # TODO(Alex | 22.02.2023) Move to save_func like in UT-TML repo
-            prepare_for_pickling(result)
-            pickle.dump(result, open(cache_fullpath, "wb"))
-            log_or_print(
-                "Saved cached {} into {}".format(
-                    object_name,
-                    cache_fullpath
-                ),
-                logger=logger,
-                auto_newline=True
-            )
+            save_func(result, cache_fullpath)
+            if verbose:
+                log_or_print(
+                    "Saved cached {} into {}".format(
+                        object_name,
+                        cache_fullpath
+                    ),
+                    logger=logger,
+                    auto_newline=True
+                )
         except OSError:
-            log_or_print(
+            error_or_print(
                 "Could not save cached {} to {}. "
                 "Reason: \n{} \nContinuing without saving it.".format(
                     object_name,
@@ -446,7 +488,34 @@ def make_or_load_from_cache(
                 logger=logger,
                 auto_newline=True
             )
+
+    result = update_object_fingerprint_attr(result, object_fingerprint)
+
     return result
+
+
+def extract_from_gc_by_attribute(attribute_name, attribute_value):
+
+    res = []
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+
+        for obj in gc.get_objects():
+            has_attribute = False
+
+            try:
+                has_attribute = hasattr(obj, attribute_name)
+            except:
+                continue
+
+            if (
+                has_attribute
+                    and (getattr(obj, attribute_name) == attribute_value)
+            ):
+                res.append(obj)
+
+    return res
 
 
 class SingleDataloaderWrapper:
