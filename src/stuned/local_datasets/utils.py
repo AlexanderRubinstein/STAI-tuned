@@ -830,3 +830,34 @@ def get_base_dataset(
     )
 
     return dataset
+
+
+class CachingDatasetWrapper(torch.utils.data.Dataset):
+
+    def __init__(self, dataset, unique_hash, cache_path):
+        self.dataset = dataset
+        self.unique_hash = unique_hash
+        self.cache_path = cache_path
+
+    def __getitem__(self, index):
+
+        def make_item(item_config, logger):
+            return {"item": self.dataset[index]}
+
+        item = make_or_load_from_cache(
+            "dataset_item_{}".format(index),
+            object_config={},
+            unique_hash=self.unique_hash,
+            make_func=make_item,
+            cache_path=self.cache_path,
+            verbose=False
+        )
+
+        return item["item"]
+
+    def __len__(self):
+        return len(self.dataset)
+
+
+def make_caching_dataset(dataset, unique_hash, cache_path):
+    return CachingDatasetWrapper(dataset, unique_hash, cache_path)
