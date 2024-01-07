@@ -387,7 +387,8 @@ def make_or_load_from_cache(
     forward_cache_path=False,
     logger=None,
     unique_hash=None,
-    verbose=False
+    verbose=False,
+    check_gc=False
 ):
 
     def update_object_fingerprint_attr(result, object_fingerprint):
@@ -403,20 +404,21 @@ def make_or_load_from_cache(
 
     object_fingerprint = "{}_{}".format(object_name, unique_hash)
 
-    objects_with_the_same_fingerprint = extract_from_gc_by_attribute(
-        FINGERPRINT_ATTR,
-        object_fingerprint
-    )
+    if check_gc:
+        objects_with_the_same_fingerprint = extract_from_gc_by_attribute(
+            FINGERPRINT_ATTR,
+            object_fingerprint
+        )
 
-    if len(objects_with_the_same_fingerprint) > 0:
-        if verbose:
-            log_or_print(
-                "Reusing object from RAM with fingerprint {}".format(
-                    object_fingerprint
-                ),
-                logger=logger
-            )
-        return objects_with_the_same_fingerprint[0]
+        if len(objects_with_the_same_fingerprint) > 0:
+            if verbose:
+                log_or_print(
+                    "Reusing object from RAM with fingerprint {}".format(
+                        object_fingerprint
+                    ),
+                    logger=logger
+                )
+            return objects_with_the_same_fingerprint[0]
 
     if cache_path is None:
         cache_fullpath = None
@@ -489,7 +491,8 @@ def make_or_load_from_cache(
                 auto_newline=True
             )
 
-    result = update_object_fingerprint_attr(result, object_fingerprint)
+    if check_gc:
+        result = update_object_fingerprint_attr(result, object_fingerprint)
 
     return result
 
