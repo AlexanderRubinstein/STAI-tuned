@@ -1,5 +1,6 @@
 import argparse
 import git
+import os
 
 
 # local modules
@@ -7,7 +8,8 @@ from .utils import (
     apply_random_seed,
     pretty_json,
     kill_processes,
-    get_project_root_path
+    get_project_root_path,
+    find_by_subkey
 )
 from .configs import (
     EXP_NAME_CONFIG_KEY,
@@ -19,6 +21,10 @@ from .logger import (
     handle_exception,
     redneck_logger_context
 )
+
+
+SCRATCH_LOCAL = os.path.join(os.path.abspath(os.sep), "scratch_local")
+SCRATCH_VAR_NAME = "SCRATCH"
 
 
 def parse_args():
@@ -40,6 +46,8 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
             processes_to_kill_before_exiting = []
 
             try:
+
+                define_env_vars()
 
                 main_args = parse_args()
 
@@ -103,3 +111,18 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
         return run_experiment_with_logger
 
     return wrapper_for_experiment
+
+
+def define_env_vars():
+    if SCRATCH_VAR_NAME not in os.environ:
+        user_name = os.environ.get("USER")
+        any_folder_of_user = find_by_subkey(
+            os.listdir(SCRATCH_LOCAL),
+            user_name,
+            assert_found=True,
+            only_first_occurence=True
+        )
+        os.environ[SCRATCH_VAR_NAME] = os.path.join(
+            SCRATCH_LOCAL,
+            any_folder_of_user
+        )
