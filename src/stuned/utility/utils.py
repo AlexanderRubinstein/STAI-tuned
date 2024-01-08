@@ -82,6 +82,10 @@ PLT_PLOT_HEIGHT = 5
 PLT_PLOT_WIDTH = 5
 
 
+# regexes
+ENV_VAR_RE = re.compile(r"<([a-zA-Z0-9-_]+)>")
+
+
 class ChildrenForPicklingPreparer:
 
     def _prepare_for_pickling(self):
@@ -1194,11 +1198,18 @@ def read_csv_as_dict_pd(
 
 
 def normalize_string_path(path, current_dir):
+
     if current_dir is None:
         current_dir = get_project_root_path()
     path = os.path.expanduser(path)
     if path[0] == '.':
         path = os.path.join(current_dir, path)
+    env_vars = ENV_VAR_RE.findall(path)
+    for env_var in env_vars:
+        assert env_var in os.environ, \
+            f"Environment variable {env_var} is not set."
+        path = path.replace(f"<{env_var}>", os.environ[env_var])
+
     return os.path.abspath(path)
 
 
