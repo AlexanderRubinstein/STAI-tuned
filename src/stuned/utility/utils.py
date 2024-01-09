@@ -83,7 +83,7 @@ PLT_PLOT_WIDTH = 5
 
 
 # regexes
-ENV_VAR_RE = re.compile(r"<([a-zA-Z0-9-_]+)>")
+ENV_VAR_RE = re.compile(r"<\$([a-zA-Z0-9-_]+)>")
 
 
 class ChildrenForPicklingPreparer:
@@ -1208,7 +1208,7 @@ def normalize_string_path(path, current_dir):
     for env_var in env_vars:
         assert env_var in os.environ, \
             f"Environment variable {env_var} is not set."
-        path = path.replace(f"<{env_var}>", os.environ[env_var])
+        path = path.replace(f"<${env_var}>", os.environ[env_var])
 
     return os.path.abspath(path)
 
