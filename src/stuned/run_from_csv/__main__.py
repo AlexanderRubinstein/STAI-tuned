@@ -146,6 +146,7 @@ def parse_args():
         "--max_concurrent_jobs",
         type=int,
         required=False,
+        default=-1,
         help="maximum number of concurrent jobs to run",
     )
     return parser.parse_args()

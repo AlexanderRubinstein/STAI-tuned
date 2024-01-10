@@ -143,11 +143,19 @@ LOGGING_CONFIG_KEY = "logging"
 DEFAULT_SPREADSHEET_ROWS = 100
 DEFAULT_SPREADSHEET_COLS = 20
 DEFAULT_SPREADSHEET_NAME = "default_spreadsheet"
-DEFAULT_GOOGLE_CREDENTIALS_PATH = os.path.join(
-    os.path.expanduser("~"), ".config", "gauth", "credentials.json"
-)
+# DEFAULT_GOOGLE_CREDENTIALS_PATH = os.path.join(
+#     os.path.expanduser("~"), ".config", "gauth", "credentials.json"
+# )
+
+DEFAULT_GAUTH_FOLDER = os.path.join(os.path.expanduser("~"), ".config", "gauth", "gauth")
+# DEFAULT_REFRESH_GOOGLE_CREDENTIALS = os.path.join(
+#     os.path.dirname(DEFAULT_GOOGLE_CREDENTIALS_PATH), "gauth_refresh_credentials.json"
+# )
+
+DEFAULT_GOOGLE_CREDENTIALS_PATH = os.path.join(DEFAULT_GAUTH_FOLDER, "credentials.json")
+DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH = os.path.join(DEFAULT_GAUTH_FOLDER, "service_key.json")
 DEFAULT_REFRESH_GOOGLE_CREDENTIALS = os.path.join(
-    os.path.dirname(DEFAULT_GOOGLE_CREDENTIALS_PATH), "gauth_refresh_credentials.json"
+    DEFAULT_GAUTH_FOLDER, "gauth_refresh_credentials.json"
 )
 URL_ID_RE = re.compile(r"id=([a-zA-Z0-9-_]+)")
 URL_KEY_RE = re.compile(r"key=([^&#]+)")
@@ -862,7 +870,8 @@ def redneck_logger_context(
             try_to_log_in_csv_in_batch(logger, info_to_report)
 
     # set up google drive sync
-    if logging_config[GDRIVE_FOLDER_KEY] is not None:
+    # if logging_config[GDRIVE_FOLDER_KEY] is not None:
+    if logging_config.get(GDRIVE_FOLDER_KEY) is not None:
         logger.create_logs_on_gdrive(logging_config[GDRIVE_FOLDER_KEY])
         logger.start_gdrive_daemon()
         logger.log(f"Remote folder with logs: {logger.remote_log_folder_url}")
@@ -1178,6 +1187,9 @@ class GspreadClient:
 
     @retrier_factory_with_auto_logger()
     def _create_client(self):
+        if os.path.exists(DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH):
+            return gspread.service_account(filename=DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH)
+
         _, auth_user_filename = make_google_auth(self.gspread_credentials, logger=self.logger)
         return gspread.oauth(
             credentials_filename=self.gspread_credentials,
@@ -1534,7 +1546,17 @@ class GdriveClient:
 
     @retrier_factory_with_auto_logger()
     def _create_client(self):
-        gauth, _ = make_google_auth(self.credentials)
+        if os.path.exists(DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH):
+            settings = {
+                "client_config_backend": "service",
+                "service_config": {
+                    "client_json_file_path": DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH,
+                },
+            }
+            gauth = GoogleAuth(settings=settings)
+            gauth.ServiceAuth()
+        else:
+            gauth, _ = make_google_auth(self.credentials)
         return GoogleDrive(gauth)
 
     def get_node_by_id(self, node_id):
