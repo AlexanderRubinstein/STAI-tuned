@@ -101,6 +101,7 @@ RUNNING_STATUS = "Running"
 COMPLETED_STATUS = "Completed"
 FAIL_STATUS = "Fail"
 WHETHER_TO_RUN_COLUMN = "whether_to_run"
+RESULT_COLUMN_PREFIX = "result_"
 
 
 OUTPUT_CSV_KEY = "output_csv"
@@ -151,7 +152,10 @@ BASE_ESTIMATOR_LOG_SUFFIX = "base_estimator"
 
 
 LOGGING_CONFIG_KEY = "logging"
-
+SERVICE_ACCOUNT_CREDENTIALS_PATH = os.path.join(
+    os.environ["HOME"],
+    "config/gauth/credentials.json"
+)
 
 # gspread
 DEFAULT_SPREADSHEET_ROWS = 100
@@ -997,7 +1001,7 @@ def redneck_logger_context(
             try_to_sync_csv_with_remote(logger)
 
     # close wandb
-    logger.finish_wandb(verbose=True)
+    logger.finish_wandb(verbose=True)        
 
     try_to_log_in_csv_in_batch(
         logger,
@@ -1249,14 +1253,7 @@ class GspreadClient:
     @retrier_factory_with_auto_logger()
     def _create_client(self):
 
-        _, auth_user_filename = make_google_auth(
-            self.gspread_credentials,
-            logger=self.logger
-        )
-        return gspread.oauth(
-            credentials_filename=self.gspread_credentials,
-            authorized_user_filename=auth_user_filename
-        )
+        return gspread.service_account(filename=SERVICE_ACCOUNT_CREDENTIALS_PATH)
 
     @retrier_factory_with_auto_logger()
     def delete_spreadsheet(

@@ -1206,7 +1206,7 @@ def normalize_path(path, current_dir=None):
     if path is None:
         return None
     if isinstance(path, str):
-        assert path
+        assert path, f"Path {path} is empty."
         return normalize_string_path(path, current_dir)
     elif isinstance(path, list):
         assert path
