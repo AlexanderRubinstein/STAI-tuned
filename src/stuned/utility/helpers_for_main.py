@@ -114,7 +114,7 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
 
 
 def define_env_vars():
-    if SCRATCH_VAR_NAME not in os.environ:
+    if SCRATCH_VAR_NAME not in os.environ and os.path.exists(SCRATCH_LOCAL):
         user_name = os.environ.get("USER")
         any_folder_of_user = find_by_subkey(
             os.listdir(SCRATCH_LOCAL),
