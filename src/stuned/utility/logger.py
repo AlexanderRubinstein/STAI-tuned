@@ -1256,6 +1256,11 @@ class GspreadClient:
     @retrier_factory_with_auto_logger()
     def _create_client(self):
 
+        if os.path.exists(DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH):
+            return gspread.service_account(
+                filename=DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH
+            )
+
         _, auth_user_filename = make_google_auth(
             self.gspread_credentials,
             logger=self.logger
@@ -1507,7 +1512,18 @@ class GdriveClient:
     @retrier_factory_with_auto_logger()
     def _create_client(self):
 
-        gauth, _ = make_google_auth(self.credentials)
+        if os.path.exists(DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH):
+            settings = {
+                    "client_config_backend": "service",
+                    "service_config": {
+                        "client_json_file_path":
+                            DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH,
+                    }
+                }
+            gauth = GoogleAuth(settings=settings)
+            gauth.ServiceAuth()
+        else:
+            gauth, _ = make_google_auth(self.credentials)
         return GoogleDrive(gauth)
 
     def get_node_by_id(self, node_id):
