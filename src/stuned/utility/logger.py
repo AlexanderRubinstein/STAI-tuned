@@ -157,14 +157,21 @@ LOGGING_CONFIG_KEY = "logging"
 DEFAULT_SPREADSHEET_ROWS = 100
 DEFAULT_SPREADSHEET_COLS = 20
 DEFAULT_SPREADSHEET_NAME = "default_spreadsheet"
-DEFAULT_GOOGLE_CREDENTIALS_PATH = os.path.join(
+DEFAULT_GAUTH_FOLDER = os.path.join(
     os.path.expanduser('~'),
     ".config",
-    "gauth",
+    "gauth"
+)
+DEFAULT_GOOGLE_CREDENTIALS_PATH = os.path.join(
+    DEFAULT_GAUTH_FOLDER,
     "credentials.json"
 )
+DEFAULT_GOOGLE_SERVICE_CREDENTIALS_PATH = os.path.join(
+    DEFAULT_GAUTH_FOLDER,
+    "service_key.json"
+)
 DEFAULT_REFRESH_GOOGLE_CREDENTIALS = os.path.join(
-    os.path.dirname(DEFAULT_GOOGLE_CREDENTIALS_PATH),
+    DEFAULT_GAUTH_FOLDER,
     "gauth_refresh_credentials.json"
 )
 URL_ID_RE = re.compile(r"id=([a-zA-Z0-9-_]+)")
@@ -879,7 +886,7 @@ def redneck_logger_context(
         )
 
     # set up google drive sync
-    if logging_config[GDRIVE_FOLDER_KEY] is not None:
+    if logging_config.get(GDRIVE_FOLDER_KEY) is not None:
         logger.create_logs_on_gdrive(
             logging_config[GDRIVE_FOLDER_KEY]
         )
