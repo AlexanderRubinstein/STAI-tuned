@@ -582,16 +582,18 @@ def get_generic_train_eval_dataloaders(
     train_batch_size,
     eval_batch_size,
     shuffle_train=True,
-    shuffle_eval=False
+    shuffle_eval=False,
+    **dataloader_kwargs
 ):
 
-    def add_dataloaders(datasets_dict, batch_size, shuffle):
+    def add_dataloaders(datasets_dict, batch_size, shuffle, **dataloader_kwargs):
         dataloaders_dict = {}
         for dataset_name, dataset in datasets_dict.items():
             dataloaders_dict[dataset_name] = DataLoader(
                 dataset,
                 shuffle=shuffle,
-                batch_size=batch_size
+                batch_size=batch_size,
+                **dataloader_kwargs
             )
         return dataloaders_dict
 
@@ -602,14 +604,16 @@ def get_generic_train_eval_dataloaders(
         train_dataloaders = add_dataloaders(
             train_datasets_dict,
             train_batch_size,
-            shuffle_train
+            shuffle_train,
+            **dataloader_kwargs
         )
 
     if eval_batch_size > 0:
         eval_dataloaders = add_dataloaders(
             eval_datasets_dict,
             eval_batch_size,
-            shuffle_eval
+            shuffle_eval,
+            **dataloader_kwargs
         )
 
     return train_dataloaders, eval_dataloaders
