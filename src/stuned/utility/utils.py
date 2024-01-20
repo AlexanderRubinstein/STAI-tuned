@@ -445,6 +445,7 @@ def save_checkpoint(
     )
     for obj in checkpoint.values():
         prepare_for_unpickling(obj)
+    return checkpoint_savepath
 
 
 def prepare_for_pickling(obj):
