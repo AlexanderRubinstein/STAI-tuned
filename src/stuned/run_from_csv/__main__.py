@@ -19,6 +19,7 @@ import psutil
 from stuned.gsheet_batch_updater import GSheetBatchUpdater
 from stuned.job import Job, JobStatus, find_job_id_by_row_id, find_job_idx, get_slurm_job_status
 from stuned.job_manager import JobManager
+from stuned.utility.ai_center_cluster_specific import get_region, CLUSTER
 from stuned.utility.local_processing_utils import process_exists
 
 # local modules
@@ -1073,6 +1074,13 @@ def dump_into_gsheet_queue(gsheet_updater, job_manager: JobManager):
 def main_with_monitoring(
     make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX, HTTP_PREFIX)
 ):
+    # Determine to which region we belong
+    cluster_region = get_region()
+    if cluster_region == CLUSTER.UNKNOWN:
+        print("Unknown cluster region. Using partitions are specified")
+    else:
+        print(f"We're on cluster region: {cluster_region}, using only the corresponding partitions")
+
     # Define a flag to check if we should exit
 
     if make_final_cmd is None:
@@ -1153,6 +1161,7 @@ def main_with_monitoring(
                 job_manager.server_ip,
                 job_manager.server_port,
                 disable_local_loging,
+                cluster_region,
             )
             for row_number, csv_row in inputs_csv.items()
         ]
@@ -1457,6 +1466,7 @@ def process_csv_row(
     server_ip,
     server_port,
     disable_local_loging,
+    cluster_region,
 ):
     assert not spreadsheet_url or worksheet_name is not None, (
         "`worksheet_name` is None but this is not allowed when remote sheet is used;"
@@ -1467,7 +1477,19 @@ def process_csv_row(
 
     whether_to_run = csv_row[WHETHER_TO_RUN_COLUMN]
 
-    if whether_to_run.isnumeric() and int(whether_to_run) != 0:
+    gpu_fits_cluster = True
+    # check if the partition corresponds to login node
+    if "slurm:partition" in csv_row:
+        # using galvani's gpus
+        if "gal" in csv_row["slurm:partition"] and cluster_region == CLUSTER.OWL1:
+            gpu_fits_cluster = False
+        if "gal" not in csv_row["slurm:partition"] and cluster_region == CLUSTER.GAL:
+            gpu_fits_cluster = False
+    if not gpu_fits_cluster:
+        logger.log(
+            f"Skipping row {row_number} because it doesn't fit the cluster! Found {csv_row['slurm:partition']} but expected to be in {cluster_region}"
+        )
+    if gpu_fits_cluster and whether_to_run.isnumeric() and int(whether_to_run) != 0:
         replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
         replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
 
