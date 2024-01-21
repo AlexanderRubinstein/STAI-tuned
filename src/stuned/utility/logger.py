@@ -685,7 +685,8 @@ def log_to_sheet_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
                 value = value[0]
         elif isinstance(value, np.ndarray):
             value = value.tolist()
-        final_column_value_pairs[i] = (final_column_value_pairs[i][0], value)
+        escaped_key_name = final_column_value_pairs[i][0].replace(",", "_")
+        final_column_value_pairs[i] = (escaped_key_name, value)
 
     # if logger.gspread_client is not None:
     if logger.socket_client is not None:
