@@ -81,7 +81,7 @@ DEV_NULL = "/dev/null"
 DEFAULT_SLURM_ARGS_DICT = {
     # "partition": "gpu-2080ti-beegfs",
     "gpus": 1,
-    "time": "06:00:00",
+    "time": "09:00:00",
     "ntasks": 1,
     "cpus-per-task": 2,
     "error": DEV_NULL,

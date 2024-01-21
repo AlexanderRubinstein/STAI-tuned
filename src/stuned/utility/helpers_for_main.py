@@ -78,6 +78,8 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                     "logging" in experiment_config
                     and "server_ip" in experiment_config["logging"]
                     and "server_port" in experiment_config["logging"]
+                    and experiment_config["logging"]["server_ip"] is not None
+                    and experiment_config["logging"]["server_port"] is not None
                 ):
                     logger.log("Using socket for logging")
                     using_socket = True

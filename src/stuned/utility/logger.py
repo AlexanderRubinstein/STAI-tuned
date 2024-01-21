@@ -138,6 +138,8 @@ BASE_ESTIMATOR_LOG_SUFFIX = "base_estimator"
 
 LOGGING_CONFIG_KEY = "logging"
 
+USE_LOCAL_CSV_WRITING = False
+
 
 # gspread
 DEFAULT_SPREADSHEET_ROWS = 100
@@ -258,6 +260,12 @@ class RedneckLogger(BaseLogger):
         self.self_columns = set()
 
         self.socket_client: MessageClient = None
+
+        # stores run's configs and metrics
+        self.csv_run_dict = {}
+
+        self.remote_needs_sync = False
+        self.remote_last_sync_time = 0
 
     def store(self, name, msg):
         assert isinstance(msg, str)
@@ -585,7 +593,7 @@ def handle_exception(logger, exception=None):
     if logger.socket_client:
         try_to_log_in_socket_in_batch(logger, write_logs_exception, sync=True)
     else:
-        try_to_log_in_csv_in_batch(logger, write_logs_exception)
+        try_to_log_in_csv_in_batch(logger, write_logs_exception, sync=True)
 
         try_to_sync_csv_with_remote(logger)
     if "profiler_results" in logger.cache:
@@ -600,9 +608,23 @@ def try_to_log_in_csv(logger, column_name, value):
     try_to_log_in_csv_in_batch(logger, [(column_name, value)])
 
 
-def try_to_log_in_csv_in_batch(logger: RedneckLogger, column_value_pairs):
-    if logger.csv_output is not None:
-        logger.log_csv(column_value_pairs)
+def try_to_log_in_csv_in_batch(logger: RedneckLogger, column_value_pairs, sync=False):
+    # write this stuff only locally in our csv unless sync is true (in which ase also log to remote)
+    if USE_LOCAL_CSV_WRITING:
+        if logger.csv_output is not None:
+            logger.log_csv(column_value_pairs)
+    else:
+        for column_name, value in column_value_pairs:
+            if column_name not in logger.csv_run_dict or logger.csv_run_dict[column_name] != value:
+                logger.remote_needs_sync = True
+            logger.csv_run_dict[column_name] = value
+
+        if sync and logger.remote_needs_sync and (time.time() - logger.remote_last_sync_time) >= 30:
+            # TODO: sync with remote
+            logger.remote_needs_sync = False
+            logger.remote_last_sync_time = time.time()
+            asd = 12
+            pass
 
 
 def try_to_log_in_socket_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
@@ -669,9 +691,9 @@ def log_to_sheet_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
     if logger.socket_client is not None:
         return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
     else:
-        try_to_log_in_csv_in_batch(logger, final_column_value_pairs)
-        if sync:
-            try_to_sync_csv_with_remote(logger)
+        try_to_log_in_csv_in_batch(logger, final_column_value_pairs, sync=sync)
+        # if sync:
+        #     try_to_sync_csv_with_remote(logger)
 
 
 def log_to_sheet_with_msg_type_in_batch(
