@@ -24,7 +24,8 @@ from utility.utils import (
     check_duplicates,
     expand_csv,
     retrier_factory,
-    is_number
+    is_number,
+    range_for_each_group
 )
 from utility.configs import (
     AUTOGEN_PREFIX,
@@ -108,6 +109,15 @@ def parse_args():
         action="store_true",
         help="whether to first expand input csv by cartesian product of options"
     )
+    parser.add_argument(
+        "--n_groups",
+        type=str,
+        help=(
+            "in how many groups to group all jobs; "
+            "if 0 - then use one group per job"
+        ),
+        default="0"
+    )
     return parser.parse_args()
 
 
@@ -125,6 +135,11 @@ def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
         make_final_cmd = make_final_cmd_slurm
 
     args = parse_args()
+
+    # TODO(Alex | 26.01.2024): remove once tested for remote runs
+    if not args.run_locally:
+        assert args.n_groups == "0", \
+            "n_groups > 0 is not supported for non-local runs"
 
     logger = make_logger()
 
@@ -200,6 +215,14 @@ def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
 
                     os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
 
+                    n_groups = int(args.n_groups)
+                    if n_groups != 0:
+
+                        shared_rows_to_run = merge_jobs_in_groups(
+                            shared_rows_to_run,
+                            n_groups
+                        )
+
                     starmap_args_for_job_submitting = [
                         (
                             run_cmd,
@@ -221,6 +244,25 @@ def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
                     worksheet_name,
                     gspread_client
                 )
+
+
+def merge_jobs_in_groups(cmds_to_run, n_groups):
+
+    def merge_cmds(cmds):
+        result = ""
+        for i, cmd in enumerate(cmds):
+            assert len(cmd) > 2
+            assert cmd[-2:] == " &"
+            result += cmd[:-2]
+            if i + 1 < len(cmds):
+                result += " ; "
+        return f"nohup bash -c \'{result}\' &> {DEV_NULL} &"
+
+    merged_cmds = []
+    ranges = range_for_each_group(n_groups, len(cmds_to_run))
+    for range in ranges:
+        merged_cmds.append(merge_cmds(cmds_to_run[range[0]:range[1]]))
+    return merged_cmds
 
 
 def get_pool_size(iterable_len):
