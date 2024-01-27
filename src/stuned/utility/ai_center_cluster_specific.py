@@ -2,11 +2,13 @@ import requests
 
 
 class CLUSTER:
+    # TODO: remove this, add a way to idenity the region
     OWL1 = "owl1"
     GAL = "gal"
     UNKNOWN = "unknown"
 
 
+# TODO: probably a better way to do this exists :)
 def get_current_ip():
     try:
         response = requests.get("https://httpbin.org/ip")

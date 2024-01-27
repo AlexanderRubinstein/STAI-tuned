@@ -1,5 +1,6 @@
 import json
 import os
+import select
 import socket
 import time
 
@@ -88,19 +89,45 @@ class MessageClient:
                     ).encode("utf-8")
 
                     # Send the length of the message first
+                    # Send the length of the message first
                     message_length = len(message_str)
-                    self.socket.sendall(message_length.to_bytes(4, "big"))
+                    self.socket.setblocking(0)  # Set socket to non-blocking
 
-                    # Send the actual message
-                    self.socket.sendall(message_str)
-
-                    data = self.socket.recv(1024)
-                    if data == b"ACK":
-                        self.logger.log("Messages sent successfully!")
-                        self.message_queue = []  # Clear the queue after successful send
-                        return
+                    # Wait for socket to be ready for sending data
+                    ready_to_send = select.select([self.socket], [], [], 10)
+                    if ready_to_send[0]:
+                        self.socket.sendall(message_length.to_bytes(4, "big"))
+                        self.socket.sendall(message_str)
                     else:
-                        self.logger.log("No ACK received. Retrying...")
+                        self.logger.log("Timeout occurred while sending data.")
+                        return
+
+                    # Wait for socket to be ready for receiving data
+                    ready_to_receive = select.select([self.socket], [], [], 10)
+                    if ready_to_receive[0]:
+                        data = self.socket.recv(1024)
+                        if data == b"ACK":
+                            self.logger.log("Messages sent successfully!")
+                            self.message_queue = []  # Clear the queue after successful send
+                            return
+                        else:
+                            self.logger.log("No ACK received. Retrying...")
+                    else:
+                        self.logger.log("Timeout occurred while waiting for ACK.")
+                        return
+                    # message_length = len(message_str)
+                    # self.socket.sendall(message_length.to_bytes(4, "big"))
+                    #
+                    # # Send the actual message
+                    # self.socket.sendall(message_str)
+                    #
+                    # data = self.socket.recv(1024)
+                    # if data == b"ACK":
+                    #     self.logger.log("Messages sent successfully!")
+                    #     self.message_queue = []  # Clear the queue after successful send
+                    #     return
+                    # else:
+                    #     self.logger.log("No ACK received. Retrying...")
                 except Exception as e:
                     self.logger.log(f"Error: {e}. Retrying in {retry_delay} seconds...")
                     self.logger.log(f"Attempted to log: \n {message_str}")
