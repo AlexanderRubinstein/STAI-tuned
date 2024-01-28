@@ -480,7 +480,7 @@ def monitor_jobs_async(
 
     current_sleep_duration = 1  # Start with 3 seconds
     sleep_increment = 1  # Increment by 3 seconds each time
-    max_sleep_duration = 3  # Maximum sleep duration
+    max_sleep_duration = 15  # Maximum sleep duration
 
     # local_jobs_dict = {}
 
