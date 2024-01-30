@@ -51,7 +51,7 @@ BASHRC_PATH = os.path.join(
 )
 MILA_PREINIT = (
     "echo \"Date:     $(date)\" && echo \"Hostname: $(hostname)\" "
-    "&& module --quiet purge && module load anaconda/3 module load cuda/11.7 &&"
+    "&& module --quiet purge && module load anaconda/3 module load cuda/11.7 && "
 )
 NEW_SHELL_INIT_COMMAND = "source {} && conda activate".format(BASHRC_PATH)
 if os.environ.get("MILA", "0") == "1":
