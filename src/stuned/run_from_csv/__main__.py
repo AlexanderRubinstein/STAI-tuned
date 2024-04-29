@@ -514,9 +514,6 @@ def make_new_config(
         ignore_values=PLACEHOLDERS_FOR_DEFAULT
     )
 
-    if len(deltas) > 0:
-        check_duplicates(list(deltas.keys()))
-
     for key in deltas.keys():
         value = deltas[key]
         if value == EMPTY_STRING:
