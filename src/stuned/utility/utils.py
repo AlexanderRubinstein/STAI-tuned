@@ -1177,6 +1177,8 @@ def read_csv_as_dict(
 
         result[0] = {}
 
+        check_duplicates(csv_reader.fieldnames)
+
         for fieldname in csv_reader.fieldnames:
             result[0][fieldname] = fieldname
 
@@ -1479,8 +1481,13 @@ def make_file_lock(file_name):
 def check_duplicates(input_list):
 
     counter_dict = dict(Counter(input_list))
-    if max(counter_dict.values()) > 1:
-        raise Exception(f"Duplicates in:\n{input_list}\nCounts:\n{counter_dict}")
+    duplicate_dict = {
+        key: value for key, value in counter_dict.items() if value > 1
+    }
+    if len(duplicate_dict) > 0:
+        raise Exception(
+            f"Duplicates in:\n{input_list}\n\nDuplicates:\n{duplicate_dict}"
+        )
 
 
 def has_nested_attr(object, nested_attr):
