@@ -50,10 +50,8 @@ from .message_client import MessageClient, MessageType
 
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # suppress tf warning
 import shutil
-import torch
 import sys
 import traceback
-import wandb  # slow
 import contextlib
 import time
 import subprocess
@@ -62,6 +60,7 @@ import subprocess
 import copy
 import gspread  # a bit slow
 import pandas as pd  # slow
+
 import csv
 import re
 import warnings
@@ -678,12 +677,12 @@ def log_to_sheet_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
     # also possible they're on a gpu, need to move to cpu
     for i in range(len(final_column_value_pairs)):
         value = final_column_value_pairs[i][1]
-        if isinstance(value, torch.Tensor):
-            value = value.detach().cpu().numpy().tolist()
-            # but if it's a single value, convert to a string
-            if isinstance(value, list) and len(value) == 1:
-                value = value[0]
-        elif isinstance(value, np.ndarray):
+        # if isinstance(value, torch.Tensor):
+        #     value = value.detach().cpu().numpy().tolist()
+        # but if it's a single value, convert to a string
+        # if isinstance(value, list) and len(value) == 1:
+        #     value = value[0]
+        if isinstance(value, np.ndarray):
             value = value.tolist()
         escaped_key_name = final_column_value_pairs[i][0].replace(",", "_")
         final_column_value_pairs[i] = (escaped_key_name, value)
