@@ -20,12 +20,60 @@ sys.path.pop(0)
 
 
 TRANSFORMS_KEY = "transforms"
+DEFAULT_MEAN_IN = [0.485, 0.456, 0.406]
+DEFAULT_STD_IN = [0.229, 0.224, 0.225]
+DEFAULT_SIZE_IN = 224
+DEFAULT_RESIZE_IN = 256
+DEFAULT_SCALE_IN = (0.08, 1.0)
+DEFAULT_RATIO_IN = (0.75, 1.3333333333333333)
+
+
+def make_normalization_transforms():
+    return torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(
+            DEFAULT_MEAN_IN,
+            DEFAULT_STD_IN
+        )
+    ])
+
+
+def make_default_train_transforms_imagenet():
+    return torchvision.transforms.Compose(
+        [
+            torchvision.transforms.RandomResizedCrop(
+                scale=DEFAULT_SCALE_IN,
+                ratio=DEFAULT_RATIO_IN,
+                size=DEFAULT_SIZE_IN
+
+            ),
+            torchvision.transforms.RandomHorizontalFlip(),
+            torchvision.transforms.Lambda(lambda img: img.convert("RGB")),
+            make_normalization_transforms()
+        ]
+    )
+
+
+def make_default_test_transforms_imagenet():
+    return torchvision.transforms.Compose(
+        [
+            torchvision.transforms.Resize(DEFAULT_RESIZE_IN),
+            torchvision.transforms.CenterCrop(DEFAULT_SIZE_IN),
+            torchvision.transforms.Lambda(lambda img: img.convert("RGB")),
+            make_normalization_transforms()
+        ]
+    )
 
 
 def make_transforms(transforms_config):
 
     if transforms_config is None:
         return None
+
+    if transforms_config == "ImageNetEval":
+        return make_default_test_transforms_imagenet()
+    elif transforms_config == "ImageNetTrain":
+        return make_default_train_transforms_imagenet()
 
     transforms_list = transforms_config.get("transforms_list", [])
 
