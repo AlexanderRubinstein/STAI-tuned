@@ -6,27 +6,26 @@ import torchvision
 
 # local modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from src.local_datasets.utils import (
+from stuned.local_datasets.utils import (
     SCALING_FACTOR,
     make_default_data_path,
     make_default_cache_path,
     uniformly_subsample_dataset,
     make_dataset_wrapper_with_index,
-    make_caching_dataset,
-    extract_subset_indices
+    make_caching_dataset
 )
-from src.utility.utils import (
+from stuned.utility.utils import (
     read_yaml,
     get_project_root_path,
     get_hash
 )
-from src.local_datasets.hugging_face_scripts.imagenet1k_classes import (
+from stuned.local_datasets.hugging_face_scripts.imagenet1k_classes import (
     IMAGENET2012_CLASSES
 )
-from src.local_datasets.transforms import (
+from stuned.local_datasets.transforms import (
     TRANSFORMS_KEY
 )
-from datasets import load_dataset # a bit slow
+from datasets import load_dataset
 sys.path.pop(0)
 
 
@@ -247,7 +246,7 @@ def get_imagenet_dataloaders(
             transform=train_transform,
             num_samples=imagenet_config.get("num_train_samples", 0),
             return_index=return_index,
-            subset_indices=extract_subset_indices(subset_indices, train_split),
+            subset_indices=None,
             reverse_indices=imagenet_config.get("reverse_indices", False),
             num_workers=num_workers
         )
@@ -263,7 +262,7 @@ def get_imagenet_dataloaders(
                 transform=eval_transform,
                 num_samples=imagenet_config.get("num_test_samples", 0),
                 return_index=return_index,
-                subset_indices=extract_subset_indices(subset_indices, split),
+                subset_indices=None,
                 reverse_indices=imagenet_config.get("reverse_indices", False),
                 num_workers=num_workers
             ) for split in imagenet_config["test_splits"]

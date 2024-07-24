@@ -868,3 +868,19 @@ class CachingDatasetWrapper(torch.utils.data.Dataset):
 
 def make_caching_dataset(dataset, unique_hash, cache_path):
     return CachingDatasetWrapper(dataset, unique_hash, cache_path)
+
+
+class DatasetWrapperWithIndex(torch.utils.data.Dataset):
+
+        def __init__(self, dataset):
+            self.dataset = dataset
+
+        def __getitem__(self, index):
+            return *self.dataset[index], index
+
+        def __len__(self):
+            return len(self.dataset)
+
+
+def make_dataset_wrapper_with_index(dataset):
+    return DatasetWrapperWithIndex(dataset)
