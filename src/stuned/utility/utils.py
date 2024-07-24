@@ -1956,3 +1956,14 @@ def invert_dict(d, none_to_string=False):
 
 def load_from_pickle(path):
     return pickle.load(open(path, "rb"))
+
+
+def extract_list_from_huge_string(huge_string, separator='\n'):
+    assert isinstance(huge_string, str)
+    split = huge_string.split(separator)
+    res = []
+    for el in split:
+        el = el.strip()
+        if el != '':
+            res.append(el)
+    return res
