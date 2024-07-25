@@ -1967,3 +1967,15 @@ def extract_list_from_huge_string(huge_string, separator='\n'):
         if el != '':
             res.append(el)
     return res
+
+
+def apply_pairwise(iterable, func):
+
+    if len(iterable) == 1:
+        return iterable
+
+    pairs = itertools.combinations(iterable, 2)
+    res = []
+    for a, b in pairs:
+        res.append(func(a, b))
+    return res

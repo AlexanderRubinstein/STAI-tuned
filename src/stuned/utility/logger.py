@@ -8,7 +8,7 @@ import wandb # slow
 import contextlib
 import time
 import subprocess
-from torch.utils.tensorboard import SummaryWriter # a bit slow
+# from torch.utils.tensorboard import SummaryWriter # a bit slow
 import copy
 import gspread # a bit slow
 import pandas as pd # slow
@@ -57,6 +57,13 @@ from .utils import (
     itself_and_lower_upper_case,
     get_with_assert
 )
+from .imports import (
+    lazy_import
+)
+
+
+# lazy imports
+torch_tensorboard = lazy_import("torch.utils.tensorboard")
 
 
 PROGRESS_FREQUENCY = 0.01
@@ -946,7 +953,7 @@ def redneck_logger_context(
         assert_tb_credentials(tb_config["credentials_path"])
         assert tb_log_dir is not None
 
-        logger.tb_run = SummaryWriter(tb_log_dir)
+        logger.tb_run = torch_tensorboard.SummaryWriter(tb_log_dir)
 
         tb_process_spawner = prepare_factory_without_args(
             run_tb_folder_listener,
