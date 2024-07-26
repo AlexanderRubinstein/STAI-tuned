@@ -60,7 +60,7 @@ PATH_TO_DEFAULT_CONFIG_COLUMN = "path_to_default_config"
 MAIN_PATH_COLUMN = "path_to_main"
 DEV_NULL = "/dev/null"
 DEFAULT_SLURM_ARGS_DICT = {
-    "partition": "gpu-2080ti-beegfs",
+    "partition": "<DEFAULT PARTITION>",
     "gres": "gpu:1",
     "time": "02:00:00",
     "ntasks": 1,
@@ -213,7 +213,12 @@ def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
                         shared_csv_updates
                     )
 
-                    os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
+                    log_file_path = args.log_file_path
+                    os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+                    logger.log(
+                        f"Logs from this submission script "
+                        f"will be stored in: {log_file_path}"
+                    )
 
                     n_groups = int(args.n_groups)
                     if n_groups != 0:
@@ -226,7 +231,7 @@ def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
                     starmap_args_for_job_submitting = [
                         (
                             run_cmd,
-                            args.log_file_path
+                            log_file_path
                         )
                             for run_cmd in shared_rows_to_run
                     ]
@@ -389,7 +394,8 @@ def process_csv_row(
             default_config_path \
                 = shared_default_config_paths[default_config_path_or_url]
 
-        assert os.path.exists(default_config_path)
+        assert os.path.exists(default_config_path), \
+            f"Default config path does not exist: {default_config_path}"
 
         exp_dir = normalize_path(os.path.dirname(default_config_path))
         exp_name = os.path.basename(exp_dir)
@@ -550,7 +556,8 @@ def make_new_config(
 
 def replace_placeholders(csv_row, placeholder, new_value):
     for column_name, value in csv_row.items():
-        csv_row[column_name] = str(value).replace(placeholder, new_value)
+        if placeholder in str(value):
+            csv_row[column_name] = str(value).replace(placeholder, new_value)
 
 
 def make_task_cmd(new_config_path, conda_env, exec_path):

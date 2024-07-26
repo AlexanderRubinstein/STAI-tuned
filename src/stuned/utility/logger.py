@@ -4,18 +4,17 @@ import shutil
 import torch
 import sys
 import traceback
-import wandb # slow
+import wandb
 import contextlib
 import time
 import subprocess
-# from torch.utils.tensorboard import SummaryWriter # a bit slow
 import copy
-import gspread # a bit slow
-import pandas as pd # slow
+import gspread
+import pandas as pd
 import csv
 import re
 import warnings
-from pydrive2.auth import GoogleAuth, RefreshError # a bit slow
+from pydrive2.auth import GoogleAuth, RefreshError
 from pydrive2.drive import GoogleDrive
 import psutil
 import multiprocessing as mp
@@ -112,7 +111,9 @@ WHETHER_TO_RUN_COLUMN = "whether_to_run"
 
 OUTPUT_CSV_KEY = "output_csv"
 PATH_KEY = "path"
-ROW_NUMBER_KEY = "row_number"  # starts with 0
+INITIAL_CSV_KEY = "initial_csv"
+ROW_NUMBER_KEY = "row_number"  # row_number == 0 corresponds to
+                               # row with column names
 GDRIVE_FOLDER_KEY = "gdrive_storage_folder"
 STDOUT_KEY = "stdout"
 STDERR_KEY = "stderr"
@@ -152,9 +153,6 @@ READ_BUFSIZE = 1024
 TENSORBOARD_FINISHED = "Total uploaded:"
 MAX_TIME_BETWEEN_TB_LOG_UPDATES = 60
 MAX_TIME_TO_WAIT_FOR_TB_TO_SAVE_DATA = 1800
-
-
-BASE_ESTIMATOR_LOG_SUFFIX = "base_estimator"
 
 
 LOGGING_CONFIG_KEY = "logging"
@@ -770,6 +768,20 @@ def try_to_sync_csv_with_remote(logger, sync_row_zero=True):
             single_rows_per_csv=single_rows_per_csv
         )
 
+    else:
+        csv_row_to_edit = logger.csv_output[ROW_NUMBER_KEY]
+        local_csv = read_csv_as_dict(logger.csv_output[PATH_KEY])
+        row_col_value_triplets = [
+            (csv_row_to_edit, col, value)
+                for col, value
+                    in local_csv[csv_row_to_edit].items()
+        ]
+        log_csv_for_concurrent(
+            logger.csv_output[INITIAL_CSV_KEY],
+            row_col_value_triplets,
+            concurrent=True
+        )
+
 
 def try_to_log_in_wandb(logger, dict_to_log, step):
     wandb_run = logger.wandb_run
@@ -830,13 +842,6 @@ def insert_char_before_max_width(
     return result
 
 
-def make_base_estimator_name(base_estimator_id):
-    return "{} {}".format(
-        BASE_ESTIMATOR_LOG_SUFFIX,
-        base_estimator_id
-    )
-
-
 @contextlib.contextmanager
 def redneck_logger_context(
     logging_config,
@@ -858,6 +863,7 @@ def redneck_logger_context(
         )
         with make_file_lock(csv_path):
             shutil.copy(csv_path, local_csv_path)
+        output_config[INITIAL_CSV_KEY] = output_config[PATH_KEY]
         output_config[PATH_KEY] = local_csv_path
         logger.set_csv_output(
             output_config
