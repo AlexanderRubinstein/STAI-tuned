@@ -768,7 +768,7 @@ def try_to_sync_csv_with_remote(logger, sync_row_zero=True):
             single_rows_per_csv=single_rows_per_csv
         )
 
-    else:
+    elif logger.csv_output is not None:
         csv_row_to_edit = logger.csv_output[ROW_NUMBER_KEY]
         local_csv = read_csv_as_dict(logger.csv_output[PATH_KEY])
         row_col_value_triplets = [
