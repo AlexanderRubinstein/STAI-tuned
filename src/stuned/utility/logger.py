@@ -913,7 +913,8 @@ def redneck_logger_context(
             ]
         )
 
-    use_tb = get_with_assert(logging_config, "use_tb")
+    # use_tb = get_with_assert(logging_config, "use_tb")
+    use_tb = logging_config.get("use_tb", False)
     tb_log_dir = None
     tb_upload = False
     if use_tb:
@@ -922,7 +923,8 @@ def redneck_logger_context(
             TB_LOG_FOLDER
         )
 
-    use_wandb = get_with_assert(logging_config, "use_wandb")
+    # use_wandb = get_with_assert(logging_config, "use_wandb")
+    use_wandb = logging_config.get("use_wandb", False)
     # init wandb_run if exists
     if use_wandb:
         wandb_config = logging_config["wandb"]
