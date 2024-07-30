@@ -15,6 +15,9 @@ from utility.utils import (
 sys.path.pop(0)
 
 
+MAX_BUFFER_SIZE = 1000
+
+
 def patch_runner_config(experiment_config):
     pass
 
@@ -92,7 +95,9 @@ def run_cmd_through_popen(cmd_to_run, logger):
                 break
 
             buffer += output
-            if output == '\n':
+
+            if output == '\n' or len(buffer) > MAX_BUFFER_SIZE:
+
                 log_func(buffer, logger)
                 buffer = ""
 
