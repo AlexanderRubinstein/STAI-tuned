@@ -73,6 +73,7 @@ EXPANDED_CSV_PREFIX = "expanded_"
 CURRENT_ROW_PLACEHOLDER = "__ROW__"
 CURRENT_WORKSHEET_PLACEHOLDER = "__WORKSHEET__"
 RUNNER_PLACEHOLDER = "__RUNNER__"
+COMMA_PLACEHOLDER = "__COMMA__"
 PATH_TO_RUNNER_MAIN = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
     "run_cmd",
@@ -387,6 +388,7 @@ def process_csv_row(
         replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
         replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
         replace_placeholders(csv_row, RUNNER_PLACEHOLDER, PATH_TO_RUNNER_MAIN)
+        replace_placeholders(csv_row, COMMA_PLACEHOLDER, ",")
 
         default_config_path_or_url = csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN]
         if not default_config_path_or_url in shared_default_config_paths:
