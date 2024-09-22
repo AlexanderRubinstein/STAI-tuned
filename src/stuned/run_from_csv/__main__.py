@@ -82,7 +82,7 @@ DEV_NULL = "/dev/null"
 DEFAULT_SLURM_ARGS_DICT = {
     # "partition": "gpu-2080ti-beegfs",
     "gpus": 1,
-    "time": "72:00:00",
+    "time": "24:00:00",
     "ntasks": 1,
     "cpus-per-task": 2,
     "error": DEV_NULL,
@@ -152,10 +152,8 @@ def parse_args():
     )
     return parser.parse_args()
 
-
 def get_default_log_file_path():
     return os.path.join(get_project_root_path(), "tmp", "tmp_log_for_run_from_csv.out")
-
 
 #
 # def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
