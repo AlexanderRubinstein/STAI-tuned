@@ -40,6 +40,8 @@ IMAGENET_TRAIN_NUM_SAMPLES = 1281167
 IMAGENET_VAL_NUM_SAMPLES = 50000
 DEFAULT_HUGGING_FACE_ACCESS_TOKEN_PATH \
     = os.path.expanduser("~/.config/hugging_face/hf.yaml")
+DEFAULT_MEAN = [0.485, 0.456, 0.406]
+DEFAULT_STD = [0.229, 0.224, 0.225]
 
 
 def make_default_transforms_for_imagenet():

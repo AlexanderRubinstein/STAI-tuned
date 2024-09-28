@@ -30,8 +30,10 @@ import io
 import re
 import matplotlib.pyplot as plt
 import pandas as pd
+import threading
 
 
+MAX_BUFFER_SIZE = 1000
 SYSTEM_PLATFORM = platform.system().lower()
 DEFAULT_HASH_SIZE = 10
 DEFAULT_EXPERIMENTS_FOLDER = "experiments"
@@ -153,13 +155,13 @@ def append_dict(total_dict, current_dict, allow_new_keys=False):
                 total_dict
             ):
                 sub_dict = {}
-                append_dict(sub_dict, value)
+                append_dict(sub_dict, value, allow_new_keys=allow_new_keys)
                 total_dict[key] = sub_dict
             else:
                 assert key in total_dict
                 sub_dict = total_dict[key]
                 assert isinstance(sub_dict, dict)
-                append_dict(sub_dict, value)
+                append_dict(sub_dict, value, allow_new_keys=allow_new_keys)
                 total_dict[key] = sub_dict
         else:
             if to_create_new_key(
@@ -238,6 +240,67 @@ def check_dict(
         else:
             check_2 = True
     return check_1 and check_2
+
+
+def run_cmd_through_popen(cmd_to_run, logger):
+
+    def read_out(process, out_type, logger):
+        buffer = ""
+        if out_type == "stdout":
+            out = process.stdout
+            log_func = log_or_print
+        else:
+            assert out_type == "stderr"
+            out = process.stderr
+            log_func = error_or_print
+
+        while True:
+            output = out.readline()
+            if output == '' and process.poll() is not None:
+                break
+
+            buffer += output
+
+            if output == '\n' or len(buffer) > MAX_BUFFER_SIZE:
+
+                log_func(buffer, logger)
+                buffer = ""
+
+        if buffer != "":
+            log_func(buffer, logger)
+
+    process = subprocess.Popen(
+        cmd_to_run,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    log_or_print(f"Process started by runner has id: {process.pid}", logger)
+
+    stdout_thread = threading.Thread(
+        target=read_out,
+        args=(process,"stdout",logger)
+    )
+    stderr_thread = threading.Thread(
+        target=read_out,
+        args=(process,"stderr",logger)
+    )
+
+    stdout_thread.start()
+    stderr_thread.start()
+
+    stdout_thread.join()
+    stderr_thread.join()
+
+    process.wait()
+
+    if process.returncode != 0:
+        raise Exception(
+            f"Process failed with return code: {process.returncode}. "
+            f"Check stderr for details"
+        )
 
 
 def runcmd(cmd, verbose=False, logger=None):

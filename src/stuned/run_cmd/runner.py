@@ -1,7 +1,7 @@
 import os
 import sys
-import subprocess
-import threading
+# import subprocess
+# import threading
 
 
 # local modules
@@ -9,13 +9,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from utility.utils import (
     NEW_SHELL_INIT_COMMAND,
     get_with_assert,
-    log_or_print,
-    error_or_print
+    # log_or_print,
+    # error_or_print,
+    run_cmd_through_popen
 )
 sys.path.pop(0)
 
 
-MAX_BUFFER_SIZE = 1000
+# MAX_BUFFER_SIZE = 1000
 
 
 def patch_runner_config(experiment_config):
@@ -77,63 +78,63 @@ def make_task_cmd(exec_path, kwargs, is_python, conda_env, logger):
     )
 
 
-def run_cmd_through_popen(cmd_to_run, logger):
+# def run_cmd_through_popen(cmd_to_run, logger):
 
-    def read_out(process, out_type, logger):
-        buffer = ""
-        if out_type == "stdout":
-            out = process.stdout
-            log_func = log_or_print
-        else:
-            assert out_type == "stderr"
-            out = process.stderr
-            log_func = error_or_print
+#     def read_out(process, out_type, logger):
+#         buffer = ""
+#         if out_type == "stdout":
+#             out = process.stdout
+#             log_func = log_or_print
+#         else:
+#             assert out_type == "stderr"
+#             out = process.stderr
+#             log_func = error_or_print
 
-        while True:
-            output = out.readline()
-            if output == '' and process.poll() is not None:
-                break
+#         while True:
+#             output = out.readline()
+#             if output == '' and process.poll() is not None:
+#                 break
 
-            buffer += output
+#             buffer += output
 
-            if output == '\n' or len(buffer) > MAX_BUFFER_SIZE:
+#             if output == '\n' or len(buffer) > MAX_BUFFER_SIZE:
 
-                log_func(buffer, logger)
-                buffer = ""
+#                 log_func(buffer, logger)
+#                 buffer = ""
 
-        if buffer != "":
-            log_func(buffer, logger)
+#         if buffer != "":
+#             log_func(buffer, logger)
 
-    process = subprocess.Popen(
-        cmd_to_run,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
+#     process = subprocess.Popen(
+#         cmd_to_run,
+#         shell=True,
+#         stdout=subprocess.PIPE,
+#         stderr=subprocess.PIPE,
+#         text=True
+#     )
 
-    log_or_print(f"Process started by runner has id: {process.pid}", logger)
+#     log_or_print(f"Process started by runner has id: {process.pid}", logger)
 
-    stdout_thread = threading.Thread(
-        target=read_out,
-        args=(process,"stdout",logger)
-    )
-    stderr_thread = threading.Thread(
-        target=read_out,
-        args=(process,"stderr",logger)
-    )
+#     stdout_thread = threading.Thread(
+#         target=read_out,
+#         args=(process,"stdout",logger)
+#     )
+#     stderr_thread = threading.Thread(
+#         target=read_out,
+#         args=(process,"stderr",logger)
+#     )
 
-    stdout_thread.start()
-    stderr_thread.start()
+#     stdout_thread.start()
+#     stderr_thread.start()
 
-    stdout_thread.join()
-    stderr_thread.join()
+#     stdout_thread.join()
+#     stderr_thread.join()
 
-    process.wait()
+#     process.wait()
 
-    if process.returncode != 0:
-        raise Exception(
-            f"Process failed with return code: {process.returncode}. "
-            f"Check stderr for details"
-        )
+#     if process.returncode != 0:
+#         raise Exception(
+#             f"Process failed with return code: {process.returncode}. "
+#             f"Check stderr for details"
+#         )
 
