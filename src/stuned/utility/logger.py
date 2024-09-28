@@ -1490,6 +1490,7 @@ def init_wandb_run(
         wandb_config["netrc_path"],
         "password"
     )
+
     wandb.login(
         key=wandb_password
     )
