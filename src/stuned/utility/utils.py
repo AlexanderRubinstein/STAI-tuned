@@ -534,10 +534,15 @@ def make_checkpoint_name(checkpoint):
 def get_leaves_of_nested_dict(
     nested_dict,
     nested_key_prefix=[],
-    include_values=False
+    include_values=False,
+    allow_empty_dict=False
 ):
-    assert len(nested_dict) > 0, "Nested dict is empty."
     result = []
+    if len(nested_dict) == 0:
+        if allow_empty_dict:
+            return result
+        else:
+            raise ValueError("Nested dict is empty.")
     for key, value in nested_dict.items():
         current_prefix = nested_key_prefix + [key]
         if isinstance(value, dict):
