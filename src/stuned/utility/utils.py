@@ -550,7 +550,8 @@ def get_leaves_of_nested_dict(
                 get_leaves_of_nested_dict(
                     value,
                     nested_key_prefix=current_prefix,
-                    include_values=include_values
+                    include_values=include_values,
+                    allow_empty_dict=allow_empty_dict
                 )
             )
         else:
