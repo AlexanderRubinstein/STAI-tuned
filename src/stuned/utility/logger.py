@@ -627,13 +627,13 @@ def try_to_log_in_csv_in_batch(logger: RedneckLogger, column_value_pairs, sync=F
             pass
 
 
-def try_to_log_in_socket_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
+def try_to_log_in_socket_in_batch(logger: RedneckLogger, column_value_pairs, sync=True, enabled=True):
     if logger.socket_client is not None:
         for cv_pair in column_value_pairs:
             logger.socket_client.send_message(
                 MessageType.JOB_RESULT_UPDATE, cv_pair[0], cv_pair[1], sync=False
             )
-        if sync:
+        if sync and enabled:
             logger.socket_client.sync_with_remote()
 
 
@@ -664,8 +664,9 @@ def try_to_log_in_socket_with_msg_type_in_batch(
         logger.socket_client.sync_with_remote()
 
 
-def log_to_sheet_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
+def log_to_sheet_in_batch(logger: RedneckLogger, column_value_pairs, sync=True, enabled=True):
     # if a dict is passed, covnert to a list
+    
 
     final_column_value_pairs = []
     if isinstance(column_value_pairs, dict):
@@ -690,7 +691,7 @@ def log_to_sheet_in_batch(logger: RedneckLogger, column_value_pairs, sync=True):
 
     # if logger.gspread_client is not None:
     if logger.socket_client is not None:
-        return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync)
+        return try_to_log_in_socket_in_batch(logger, final_column_value_pairs, sync=sync, enabled=enabled)
     else:
         try_to_log_in_csv_in_batch(logger, final_column_value_pairs, sync=sync)
         # if sync:

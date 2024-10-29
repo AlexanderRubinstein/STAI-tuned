@@ -1478,11 +1478,12 @@ def process_csv_row(
     gpu_fits_cluster = True
     # check if the partition corresponds to login node
     if "slurm:partition" in csv_row:
-        # using galvani's gpus
-        if "gal" in csv_row["slurm:partition"] and cluster_region == CLUSTER.OWL1:
+        # using galvani's gpus or ferranti's
+        if "h100" in csv_row["slurm:partition"] and cluster_region == CLUSTER.GALVANI:
             gpu_fits_cluster = False
-        if "gal" not in csv_row["slurm:partition"] and cluster_region == CLUSTER.GAL:
+        if ("a100" in csv_row["slurm:partition"] and cluster_region == CLUSTER.FERRANTI) or ("2080" in csv_row["slurm:partition"] and cluster_region == CLUSTER.FERRANTI):
             gpu_fits_cluster = False
+            
     if not gpu_fits_cluster:
         logger.log(
             f"Skipping row {row_number} because it doesn't fit the cluster! Found {csv_row['slurm:partition']} but expected to be in {cluster_region}"

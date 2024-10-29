@@ -1,12 +1,10 @@
+import os
 import requests
 
-
 class CLUSTER:
-    # TODO: remove this, add a way to idenity the region
-    OWL1 = "owl1"
-    GAL = "gal"
+    FERRANTI = "ferranti"
+    GALVANI = "galvani"
     UNKNOWN = "unknown"
-
 
 # TODO: probably a better way to do this exists :)
 def get_current_ip():
@@ -19,13 +17,15 @@ def get_current_ip():
         return None
 
 
-def determine_region(current_ip, region_owl1_ips, region_gal_ips):
-    if current_ip in region_owl1_ips:
-        return CLUSTER.OWL1
-    elif current_ip in region_gal_ips:
-        return CLUSTER.GAL
-    else:
-        return CLUSTER.UNKNOWN
+
+def determine_cluster_by_path():
+    # Check for the presence of specific directories to identify the cluster
+    if os.path.exists("/weka"):
+        return CLUSTER.FERRANTI
+    elif os.path.exists("/mnt/lustre"):
+        return CLUSTER.GALVANI
+    return CLUSTER.UNKNOWN
+
 
 
 def get_region():
