@@ -17,7 +17,6 @@ def get_current_ip():
         return None
 
 
-
 def determine_cluster_by_path():
     # Check for the presence of specific directories to identify the cluster
     if os.path.exists("/weka"):
@@ -29,11 +28,11 @@ def determine_cluster_by_path():
 
 
 def get_region():
-    region_owl1_ips = ["134.2.168.52", "134.2.168.72"]  # IPs for r1
-    region_gal_ips = ["134.2.168.43"]  # IPs for gal
+    # region_owl1_ips = ["134.2.168.52", "134.2.168.72"]  # IPs for r1
+    # region_gal_ips = ["134.2.168.43"]  # IPs for gal
 
-    my_ip = get_current_ip()
-    if my_ip:
-        region = determine_region(my_ip, region_owl1_ips, region_gal_ips)
-        return region
-    return CLUSTER.UNKNOWN
+    region = determine_cluster_by_path()
+    # my_ip = get_current_ip()
+    # if my_ip:
+        # return region
+    return region
