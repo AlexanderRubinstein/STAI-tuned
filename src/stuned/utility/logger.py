@@ -883,6 +883,8 @@ def redneck_logger_context(
 
     logger.log("Hostname: {}".format(get_hostname()))
     logger.log("Process id: {}".format(os.getpid()))
+    slurm_job_id = os.environ.get("SLURM_JOB_ID", "Not found")
+    logger.log("slurm_job_id: {}".format(slurm_job_id))
 
     # add csv folder if exists
     if OUTPUT_CSV_KEY in logging_config:
@@ -894,7 +896,8 @@ def redneck_logger_context(
             [
                 (WHETHER_TO_RUN_COLUMN, "0"),
                 (STATUS_CSV_COLUMN, RUNNING_STATUS),
-                (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file))
+                (RUN_FOLDER_CSV_COLUMN, os.path.dirname(logger.stdout_file)),
+                ("slurm job id", slurm_job_id)
             ]
         )
 
