@@ -1559,8 +1559,27 @@ def check_duplicates(input_list):
         )
 
 
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for key, value in self.items():
+            if isinstance(value, dict):
+                self[key] = AttrDict(value)
+
+    def __getattr__(self, item):
+        try:
+            return self[item]
+        except KeyError:
+            raise AttributeError(f"'AttrDict' object has no attribute '{item}'")
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
+
 def has_nested_attr(object, nested_attr):
     assert len(nested_attr) > 0
+    if isinstance(object, dict):
+        object = AttrDict(object)
     if len(nested_attr) == 1:
         return hasattr(object, nested_attr[0])
     else:
@@ -1575,6 +1594,8 @@ def has_nested_attr(object, nested_attr):
 
 def get_nested_attr(object, nested_attr):
     assert len(nested_attr) > 0
+    if isinstance(object, dict):
+        object = AttrDict(object)
     if len(nested_attr) == 1:
         return getattr(object, nested_attr[0])
     else:
@@ -1585,10 +1606,13 @@ def get_nested_attr(object, nested_attr):
 
 def set_nested_attr(object, nested_attr, value):
     assert len(nested_attr) > 0
-    if len(nested_attr) == 1:
-        return setattr(object, nested_attr[0], value)
+    if isinstance(object, dict):
+        update_dict_by_nested_key(object, nested_attr, value)
     else:
-        set_nested_attr(getattr(object, nested_attr[0]), nested_attr[1:], value)
+        if len(nested_attr) == 1:
+            return setattr(object, nested_attr[0], value)
+        else:
+            set_nested_attr(getattr(object, nested_attr[0]), nested_attr[1:], value)
 
 
 def write_csv_dict_to_csv(dict_from_csv, csv_file, **kwargs):
@@ -1965,9 +1989,17 @@ def get_with_assert(container, key, error_msg=None):
         else:
             return get_with_assert(next_container, rest_key, error_msg)
     else:
-        if error_msg is None:
-            error_msg = f"Key \"{key}\" not in container: {container}"
-        assert key in container, error_msg
+        key_in_container = (key in container)
+
+        if not key_in_container:
+
+            if error_msg is None:
+                error_msg = f"Key \"{key}\" not in container: {container}"
+
+            raise Exception(
+                error_msg
+            )
+
         return container[key]
 
 
