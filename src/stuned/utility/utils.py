@@ -3,6 +3,7 @@ import numpy as np
 import random
 import os
 import yaml
+import copy
 from datetime import datetime
 import subprocess
 from deepdiff import DeepDiff, model as dd_model
