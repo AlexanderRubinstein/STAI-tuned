@@ -1575,6 +1575,13 @@ class AttrDict(dict):
     def __setattr__(self, key, value):
         self[key] = value
 
+    def __deepcopy__(self, memo):
+        # Create a deepcopy of the object and its nested elements
+        copied = AttrDict()
+        for key, value in self.items():
+            copied[key] = copy.deepcopy(value, memo)
+        return copied
+
 
 def has_nested_attr(object, nested_attr):
     assert len(nested_attr) > 0
