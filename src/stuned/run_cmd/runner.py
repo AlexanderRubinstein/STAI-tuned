@@ -1,7 +1,5 @@
 import os
 import sys
-# import subprocess
-# import threading
 
 
 # local modules
@@ -9,14 +7,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from utility.utils import (
     NEW_SHELL_INIT_COMMAND,
     get_with_assert,
-    # log_or_print,
-    # error_or_print,
     run_cmd_through_popen
 )
 sys.path.pop(0)
-
-
-# MAX_BUFFER_SIZE = 1000
 
 
 def patch_runner_config(experiment_config):
@@ -85,7 +78,6 @@ def make_task_cmd(
         single_dash_flags_str = ""
 
     if conda_env is not None:
-        # assert is_python
         conda_cmd = "{} {} && ".format(
             NEW_SHELL_INIT_COMMAND,
             conda_env

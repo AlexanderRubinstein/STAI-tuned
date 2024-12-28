@@ -62,7 +62,6 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                     patch_config(experiment_config)
 
                 with redneck_logger_context(
-                    # experiment_config[LOGGING_CONFIG_KEY],
                     experiment_config.get(LOGGING_CONFIG_KEY, {}),
                     experiment_config["current_run_folder"],
                     logger=logger,
