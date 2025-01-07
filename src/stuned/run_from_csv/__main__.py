@@ -7,6 +7,7 @@ import shlex
 import signal
 import time
 import warnings
+import traceback
 from tempfile import NamedTemporaryFile
 import subprocess
 import shutil
@@ -155,112 +156,6 @@ def parse_args():
 def get_default_log_file_path():
     return os.path.join(get_project_root_path(), "tmp", "tmp_log_for_run_from_csv.out")
 
-#
-# def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
-#     """ Like main() but adds continous monitoring of the jobs """
-#     if make_final_cmd is None:
-#         make_final_cmd = make_final_cmd_slurm
-#
-#     args = parse_args()
-#
-#     logger = make_logger()
-#
-#     csv_path_or_url = args.csv_path
-#
-#     logger.log(f"Fetching csv from: {csv_path_or_url}")
-#     csv_path, spreadsheet_url, worksheet_name, gspread_client = fetch_csv(
-#         csv_path_or_url,
-#         logger
-#     )
-#
-#     if args.expand:
-#         expand_gsheet(csv_path, spreadsheet_url, worksheet_name, gspread_client)
-#
-#     inputs_csv = read_csv_as_dict(csv_path)
-#
-#     with mp.Manager() as shared_memory_manager:
-#
-#         lock = shared_memory_manager.Lock()
-#         current_step = shared_memory_manager.Value("int", 0)
-#         shared_rows_to_run = shared_memory_manager.list()
-#         shared_csv_updates = shared_memory_manager.list()
-#         shared_row_numbers = shared_memory_manager.list()
-#         shared_default_config_paths = shared_memory_manager.dict()
-#
-#         starmap_args_for_row_processing = [
-#             (
-#                 make_final_cmd,
-#                 csv_row,
-#                 row_number,
-#                 csv_path,
-#                 args.conda_env,
-#                 args.run_locally,
-#                 args.log_file_path,
-#                 spreadsheet_url,
-#                 worksheet_name,
-#                 logger,
-#                 lock,
-#                 shared_rows_to_run,
-#                 shared_default_config_paths,
-#                 shared_csv_updates,
-#                 shared_row_numbers,
-#                 current_step,D
-#                 len(inputs_csv)
-#             )
-#                 for row_number, csv_row in inputs_csv.items()
-#         ]
-#
-#         if len(starmap_args_for_row_processing):
-#
-#             first_csv_row = starmap_args_for_row_processing[0][1]
-#             check_csv_column_names(first_csv_row, allowed_prefixes)
-#
-#             pool_size = get_pool_size(len(starmap_args_for_row_processing))
-#
-#             upload_csv = False
-#
-#             with mp.Pool(pool_size) as pool:
-#
-#                 pool.starmap(
-#                     process_csv_row,
-#                     starmap_args_for_row_processing
-#                 )
-#
-#                 if len(shared_rows_to_run):
-#
-#                     assert 2 * len(shared_rows_to_run) == len(shared_csv_updates)
-#
-#                     concurrent_log_func = retrier_factory()(log_csv_for_concurrent)
-#
-#                     concurrent_log_func(
-#                         csv_path,
-#                         shared_csv_updates
-#                     )
-#
-#                     os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
-#
-#                     starmap_args_for_job_submitting = [
-#                         (
-#                             run_cmd,
-#                             args.log_file_path
-#                         )
-#                             for run_cmd in shared_rows_to_run
-#                     ]
-#
-#                     pool.starmap(
-#                         submit_job,
-#                         starmap_args_for_job_submitting
-#                     )
-#                     upload_csv = True
-#
-#             if upload_csv:
-#                 try_to_upload_csv(
-#                     csv_path,
-#                     spreadsheet_url,
-#                     worksheet_name,
-#                     gspread_client
-#                 )
-
 
 def get_all_slurm_jobs():
     try:
@@ -344,14 +239,21 @@ def update_job_statuses_in_place(
             if job_stat:
                 slurm_status = job_stat["State"]
                 exit_code = job_stat["ExitCode"]
+                job_status = get_slurm_job_status(slurm_status)
             else:
-                slurm_status = None
-                exit_code = None
-
-            job_status = get_slurm_job_status(slurm_status)
+                # Job not found in SLURM - check if we have an explicit status
+                if "status" in job:
+                    job_status = job["status"]
+                    exit_code = job.get("exit_code", None)
+                else:
+                    # No SLURM status and no explicit status
+                    slurm_status = None
+                    exit_code = None
+                    job_status = None
         else:
-            job_status = job["status"] if "status" in job else None
-            exit_code = job["exit_code"] if "exit_code" in job else None
+            # For local jobs, use the status from shared dict
+            job_status = job.get("status", None)
+            exit_code = job.get("exit_code", None)
 
         job_from_local_idx = find_job_idx(job_manager.jobs, job[ref_key_job_id])
         if job_from_local_idx is None:
@@ -381,7 +283,8 @@ def update_job_statuses_in_place(
 
 def monitor_jobs_async(
     job_manager: JobManager,
-    async_results,
+    pool,
+    job_submission_args,
     shared_jobs_dict,
     run_locally: bool,
     logger,
@@ -390,245 +293,387 @@ def monitor_jobs_async(
     shared_row_numbers,
     csv_path,
     gsheet_client: GspreadClient,
-    lock_manager,
+    lock,
     n_jobs_total,
     input_csv,
+    max_conc_jobs=-1,
 ):
-    # Prepare google client for writing the updates. The mechanism of writing the updates here is different
-    # from the individual jobs. Here we write the updates "globally" to the worksheet as opposed to a local csv file.
-    # spreadsheet_from_url = logger.get_spreadsheet_by_url(get_spreadsheet_by_urll)
-
+    # Initialize counters
+    submitted = 0
+    running = 0
+    finished_successfully = 0
+    failed = 0
+    
     # Define a flag to check if we should exit
     should_exit = False
+    signal_received = False  # Track if we've already received a signal
+    is_cancelling = False   # Track if we're in the process of cancelling
+
+    # Track which jobs are pending submission
+    pending_jobs = list(range(len(job_submission_args)))
+    active_submissions = {}  # job_idx -> AsyncResult
+    submitted_not_running = set()  # Track jobs that are submitted but not yet running
 
     # Signal handler function
     def signal_handler(sig, frame):
-        nonlocal should_exit
-        run_jobs_flag.value = 0
-        logger.log("Received exit signal. Preparing to terminate all jobs...")
-        should_exit = True
+        nonlocal should_exit, signal_received, is_cancelling
+        if is_cancelling:
+            # If we're already cancelling, ignore additional signals
+            logger.log("Cancellation in progress, please wait...")
+            return
+        if not signal_received:
+            signal_received = True
+            run_jobs_flag.value = 0  # This will prevent new jobs from being submitted
+            logger.log("Received exit signal. Preparing to terminate all jobs...")
+            should_exit = True
+        # If we get additional signals, just ignore them and let the cancellation complete
 
     # Register the signal handler
+    original_sigint = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, signal_handler)
 
-    gsheet_updater = None
-    shared_row_numbers_lst = list(shared_row_numbers)
+    try:
+        gsheet_updater = None
+        shared_row_numbers_lst = list(shared_row_numbers)
 
-    if csv_path is None:
-        assert run_locally, "If not running locally, a csv file must be provided."
-        warn("No csv file provided, skipping writing to a csv file.")
-    else:
-        gsheet_updater = GSheetBatchUpdater(
-            spreadsheet_url, worksheet_name, gsheet_client, logger, csv_path, input_csv
-        )
-        # get cols from gsheet_client using the `worksheet_name`
-        worksheet = gsheet_client.opened_spreadsheet.worksheet(worksheet_name)
-        # Get the first row (headers)
-        headers_org = worksheet.row_values(1)
-
-        # Prepare the updates
-        # "status	walltime	starttime	endtime	WandB url	stdout	stderr"
-        # TODO: make this more robust
-        # columns not_reset
-        cols_not_reset = ["path_to_main", "path_to_default_config", "custom_run_cmd"]
-
-        # also exclude slurm and delta columns
-        cols_not_reset += [
-            col
-            for col in headers_org
-            if col.startswith(SLURM_PREFIX) or col.startswith(DELTA_PREFIX)
-        ]
-
-        headers_reset = [col for col in headers_org if col not in cols_not_reset]
-
-        # reset_columns = [
-        #     "status",
-        #     "walltime",
-        #     "starttime",
-        #     "endtime",
-        #     "WandB url",
-        #     "stdout",
-        #     "stderr",
-        #     "slurm_job_id_monitor",
-        #     "gpu_info",
-        #     "cpu_count",
-        #     "exit_code_monitor",
-        #     "last_update_monitor",
-        # ]
-        column_value_pairs = [
-            (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-            (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
-        ]
-        for column_name in headers_reset:
-            column_value_pairs.append((column_name, ""))
-
-        # Add updates to the queue
-        for row_id_share in shared_row_numbers_lst:
-            for key, val in column_value_pairs:
-                gsheet_updater.add_to_queue(row_id_share, key, val)
-
-        # Write updates to CSV and then batch update the Google Sheet
-        update_status = gsheet_updater.batch_update()
-        logger.log(f"Update status to GSheets: {update_status}")
-
-    total_jobs = n_jobs_total
-    if total_jobs == 0:
-        logger.log("No jobs submitted, exiting.")
-        return
-
-    current_sleep_duration = 1  # Start with 3 seconds
-    sleep_increment = 1  # Increment by 3 seconds each time
-    max_sleep_duration = 15  # Maximum sleep duration
-
-    # local_jobs_dict = {}
-
-    last_full_check_time = time.time()
-    check_for_full_updates_every = 60
-
-    while not should_exit:
-        with lock_manager:
-            shared_jobs_copy = dict(shared_jobs_dict)
-        with job_manager.manager_lock:
-            """TODO: this can introduce some clashes between status changes; `sacct` should only be used in
-            case the job isn't reachable. Otherwise the status should be updated from the job itself.
-            """
-            jobs_update_status = update_job_statuses_in_place(
-                job_manager, shared_jobs_copy, logger, run_locally
+        if csv_path is None:
+            assert run_locally, "If not running locally, a csv file must be provided."
+            warn("No csv file provided, skipping writing to a csv file.")
+        else:
+            gsheet_updater = GSheetBatchUpdater(
+                spreadsheet_url, worksheet_name, gsheet_client, logger, csv_path, input_csv
             )
+            # get cols from gsheet_client using the `worksheet_name`
+            worksheet = gsheet_client.opened_spreadsheet.worksheet(worksheet_name)
+            # Get the first row (headers)
+            headers_org = worksheet.row_values(1)
 
-            if not jobs_update_status:
-                logger.log("Warning: sacct command timed out! Will repeat after sleeping")
-                time.sleep(current_sleep_duration)
-                continue
+            # Prepare the updates
+            cols_not_reset = ["path_to_main", "path_to_default_config", "custom_run_cmd"]
 
-            # For each updated row, add the necessary updates to the gsheet_updater queue
-            dump_into_gsheet_queue(gsheet_updater, job_manager)
+            # also exclude slurm and delta columns
+            cols_not_reset += [
+                col
+                for col in headers_org
+                if col.startswith(SLURM_PREFIX) or col.startswith(DELTA_PREFIX)
+            ]
 
-        # Count the statuses
-        submitted = submitted_jobs.value
-        # running = sum(1 for job in jobs_to_monitor if job.job_status == "Running")
-        running = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.RUNNING)
-        # finished_successfully = sum(1 for job in shared_jobs_dict.values() if job["status"] == "Completed")
-        finished_successfully = sum(
-            1 for job in job_manager.jobs if job.job_status == JobStatus.COMPLETED
-        )
-        failed = sum(
-            1
-            for job in job_manager.jobs
-            if job.job_status == JobStatus.FAILED
-            or job.job_status == JobStatus.CANCELLED
-            or job.job_status == JobStatus.TIMEOUT
-        )
+            headers_reset = [col for col in headers_org if col not in cols_not_reset]
 
-        # Display progress and status
-        last_update_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        status_msg = (
-            f"Jobs Progress | Submitted: {submitted} / {total_jobs} | "
-            f"Running: {running} / {total_jobs} | "
-            f"Finished: {finished_successfully} / {total_jobs} | "
-            f"Failed: {failed} | Last Update: {last_update_time}"
-        )
-        logger.log(status_msg, carriage_return=True)
+            column_value_pairs = [
+                (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+                (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
+                (WHETHER_TO_RUN_COLUMN, "0"),
+            ]
+            for column_name in headers_reset:
+                if column_name != WHETHER_TO_RUN_COLUMN:
+                    column_value_pairs.append((column_name, ""))
 
-        # Periodically report back to Gsheets to indicate the status of the jobs.
-        if gsheet_updater is not None:
-            gsheet_updater.batch_update()
+            # Add updates to the queue
+            for row_id_share in shared_row_numbers_lst:
+                for key, val in column_value_pairs:
+                    gsheet_updater.add_to_queue(row_id_share, key, val)
 
-            # if not job_manager.open_socket and (
-            #     time.time() - last_full_check_time > check_for_full_updates_every
-            # ):
-            #     gsheet_updater.update_remote_if_changes_happened()
+            # Write updates to CSV and then batch update the Google Sheet
+            update_status = gsheet_updater.batch_update()
+            logger.log(f"Update status to GSheets: {update_status}")
 
-        time.sleep(current_sleep_duration)
+        total_jobs = n_jobs_total
+        if total_jobs == 0:
+            logger.log("No jobs submitted, exiting.")
+            return
 
-        # Increment the sleep duration for the next iteration, but don't exceed the maximum
-        current_sleep_duration = min(current_sleep_duration + sleep_increment, max_sleep_duration)
+        current_sleep_duration = 1
+        sleep_increment = 1
+        max_sleep_duration = 15
 
-        if finished_successfully + failed == n_jobs_total:
-            logger.log("All jobs finished.")
-            break
-
-    if should_exit:
-        running_job_ids = [
-            job.job_id
-            for job in job_manager.jobs
-            if job.job_status in JobStatus.PENDING
-            or job.job_status in JobStatus.RUNNING
-            or (job.job_status is not None and job.job_status.startswith(JobStatus.UNKNOWN + "_"))
-        ]
-        logger.log(f"Number of jobs that were running: {len(running_job_ids)}")
-        exited_jobs = 0
-        # Use scancel to send a termination request to these jobs
-        for job_id in running_job_ids:
-            if run_locally:
-                # TODO without SIGKILL
-                if process_exists(job_id):
-                    os.kill(job_id, signal.SIGKILL)
-                else:
-                    exited_jobs += 1
+        while not should_exit:
+            # Check current running jobs and pending submissions
+            current_jobs = 0
+            if not run_locally:
+                try:
+                    # Get all jobs and their statuses
+                    active_job_ids = set()
+                    with lock:
+                        shared_jobs_copy = dict(shared_jobs_dict)
+                        for job_info in shared_jobs_copy.values():
+                            if 'job_id' in job_info and 'status' in job_info:
+                                status = job_info['status']
+                                # Only count jobs that are actually running or pending
+                                if status in [JobStatus.RUNNING, JobStatus.PENDING]:
+                                    active_job_ids.add(job_info['job_id'])
+                                    
+                    # Also check SLURM queue to verify jobs are actually running
+                    try:
+                        output = subprocess.check_output(["squeue", "--me", "--noheader"], universal_newlines=True)
+                        slurm_jobs = set(line.split()[0] for line in output.strip().split('\n') if line.strip())
+                        # Only keep jobs that are both in our tracking AND in SLURM queue
+                        active_job_ids = {str(job_id) for job_id in active_job_ids if str(job_id) in slurm_jobs}
+                    except subprocess.CalledProcessError:
+                        pass  # If squeue fails, fall back to our tracking
+                    
+                    # Count only jobs that are verified to be running
+                    current_jobs = len(active_job_ids) + len(active_submissions)
+                    logger.log(f"DEBUG: Found {current_jobs} active jobs (verified in SLURM)")
+                except Exception as e:
+                    logger.log(f"Failed to check job status: {str(e)}")
+                    time.sleep(5)
+                    continue
             else:
-                subprocess.run(["scancel", str(job_id)])
+                current_jobs = running_jobs.value
 
-        grace_period = 300
-        # TODO: update these things in the manager itself, not outside it
-        for second in range(1, grace_period + 1):
-            with lock_manager:
-                shared_jobs_copy = dict(shared_jobs_dict)
+            # Submit new jobs if under limit
+            logger.log(f"DEBUG: Before submission - current_jobs: {current_jobs}, active_submissions: {len(active_submissions)}, max_conc_jobs: {max_conc_jobs}")
+            while pending_jobs and (max_conc_jobs == -1 or current_jobs < max_conc_jobs):
+                job_idx = pending_jobs.pop(0)
+                args_submit = job_submission_args[job_idx]
+                logger.log(f"DEBUG: Submitting job {job_idx}")
+                active_submissions[job_idx] = pool.apply_async(submit_job, args_submit)
+                current_jobs += 1
+                logger.log(f"Submitting job {job_idx}, current jobs: {current_jobs}/{max_conc_jobs}")
 
-            update_job_statuses_in_place(job_manager, shared_jobs_copy, logger, run_locally)
-            still_running = 0
-            for job_id in running_job_ids:
-                job_idx = find_job_idx(job_manager.jobs, job_id)
-                job = job_manager.jobs[job_idx]
-                if job.job_status == JobStatus.RUNNING:
-                    still_running += 1
+            # Check completed submissions
+            completed = []
+            for job_idx, async_result in active_submissions.items():
+                if async_result.ready():
+                    try:
+                        result = async_result.get(timeout=1)
+                        logger.log(f"DEBUG: Job {job_idx} submission completed with result {result}")
+                        if result != 0:
+                            logger.log(f"Job submission failed for index {job_idx}")
+                            current_jobs -= 1  # Decrement since submission failed
+                            pending_jobs.append(job_idx)
+                    except Exception as e:
+                        logger.log(f"Error checking job {job_idx}: {str(e)}")
+                        current_jobs -= 1  # Decrement since submission failed
+                        pending_jobs.append(job_idx)
+                    completed.append(job_idx)
 
-            logger.log(
-                f"{second}/{grace_period} seconds trying, {len(running_job_ids) - still_running}/{len(running_job_ids)} jobs exited"
+            # Remove completed submissions
+            for job_idx in completed:
+                del active_submissions[job_idx]
+
+            # Wait for job manager to register the jobs and update statuses
+            if not run_locally:
+                with job_manager.manager_lock:
+                    jobs_update_status = update_job_statuses_in_place(
+                        job_manager, shared_jobs_dict, logger, run_locally
+                    )
+                    if jobs_update_status and gsheet_updater is not None:
+                        dump_into_gsheet_queue(gsheet_updater, job_manager)
+
+            # Count the statuses
+            submitted = submitted_jobs.value
+            running = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.RUNNING)
+            finished_successfully = sum(1 for job in job_manager.jobs if job.job_status == JobStatus.COMPLETED)
+            failed = sum(
+                1
+                for job in job_manager.jobs
+                if job.job_status in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMEOUT]
             )
 
-            # Break the loop if all jobs have exited
-            if still_running == 0:
-                logger.log("All jobs terminated.")
+            # Display progress and status
+            last_update_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            status_msg = (
+                f"Jobs Progress | Submitted: {submitted}/{total_jobs} | "
+                f"Running: {running}/{total_jobs} | "
+                f"Finished: {finished_successfully}/{total_jobs} | "
+                f"Failed: {failed} | "
+                f"Pending: {len(pending_jobs)} | "
+                f"Active Submissions: {len(active_submissions)} | "
+                f"Last Update: {last_update_time}"
+            )
+            logger.log(status_msg, carriage_return=True)
+
+            if gsheet_updater is not None:
+                gsheet_updater.batch_update()
+
+            time.sleep(current_sleep_duration)
+            current_sleep_duration = min(current_sleep_duration + sleep_increment, max_sleep_duration)
+
+            if finished_successfully + failed == total_jobs:
+                logger.log("All jobs finished.")
                 break
 
-            time.sleep(3)  # Sleep for 3 seconds
+    finally:
+        if should_exit:
+            is_cancelling = True  # Mark that we're in cancellation process
+            # Save original handlers
+            original_sigint = signal.getsignal(signal.SIGINT)
+            original_sigterm = signal.getsignal(signal.SIGTERM)
+            
+            # Block all signals during critical operations
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            
+            try:
+                logger.log("Cancelling pending submissions...")
+                for job_idx in list(active_submissions.keys()):
+                    async_result = active_submissions[job_idx]
+                    if not async_result.ready():
+                        # Mark as cancelled in shared dict
+                        with lock:
+                            row_id = job_submission_args[job_idx][-3]  # Get row_id from args
+                            if row_id in shared_jobs_dict:
+                                job_info = shared_jobs_dict[row_id].copy()
+                                job_info['status'] = JobStatus.CANCELLED
+                                shared_jobs_dict[row_id] = job_info
+                
+                # Update status for pending jobs before proceeding
+                with lock:
+                    shared_jobs_copy = dict(shared_jobs_dict)
+                with job_manager.manager_lock:
+                    jobs_update_status = update_job_statuses_in_place(
+                        job_manager, shared_jobs_copy, logger, run_locally
+                    )
+                    if jobs_update_status and gsheet_updater is not None:
+                        dump_into_gsheet_queue(gsheet_updater, job_manager)
+                        gsheet_updater.batch_update(force=True)
 
-        if still_running > 0:
-            logger.log(f"Warning: {still_running} jobs did not terminate after the grace period.")
-        failed += len(running_job_ids)
+                logger.log("Cancelling running jobs...")
+                running_job_ids = []
+                with lock:
+                    shared_jobs_copy = dict(shared_jobs_dict)
+                    for row_id, job_info in shared_jobs_copy.items():
+                        if 'job_id' in job_info:
+                            running_job_ids.append((job_info['job_id'], row_id))
+                            # Update status in shared dict
+                            job_info['status'] = JobStatus.CANCELLED
+                            shared_jobs_dict[row_id] = job_info
+                        elif 'main_pid' in job_info:
+                            running_job_ids.append((job_info['main_pid'], row_id))
+                            # Update status in shared dict
+                            job_info['status'] = JobStatus.CANCELLED
+                            shared_jobs_dict[row_id] = job_info
 
-    # Print summary of jobs' status
-    logger.log(f"Number of jobs submitted: {submitted}")
-    logger.log(f"Number of jobs finished successfully: {finished_successfully}")
-    logger.log(f"Number of jobs failed: {failed}")
+                if running_job_ids:
+                    logger.log(f"Sending cancellation to {len(running_job_ids)} jobs...")
+                    # Split into SLURM and local jobs
+                    slurm_jobs = []
+                    local_jobs = []
+                    for job_id, row_id in running_job_ids:
+                        if run_locally:
+                            local_jobs.append(job_id)
+                        else:
+                            slurm_jobs.append(str(job_id))
 
-    # Make sure to push the updates, if there were any
-    if gsheet_updater is not None:
-        dump_into_gsheet_queue(gsheet_updater, job_manager)
+                    # Cancel all SLURM jobs at once
+                    if slurm_jobs:
+                        logger.log("Cancelling SLURM jobs...")
+                        max_retries = 3
+                        for retry in range(max_retries):
+                            try:
+                                # First try normal cancel
+                                subprocess.run(["scancel", *slurm_jobs], check=True)
+                                
+                                # Wait and verify jobs are gone
+                                remaining_jobs = []
+                                for _ in range(5):  # Check multiple times with delay
+                                    remaining_jobs = []
+                                    try:
+                                        output = subprocess.check_output(["squeue", "--me", "--noheader"], universal_newlines=True)
+                                        for line in output.strip().split('\n'):
+                                            if line.strip():
+                                                job_id = line.split()[0]
+                                                if job_id in slurm_jobs:
+                                                    remaining_jobs.append(job_id)
+                                    except subprocess.CalledProcessError:
+                                        break  # No jobs in queue is good
+                                    
+                                    if not remaining_jobs:
+                                        break
+                                    logger.log(f"Waiting for {len(remaining_jobs)} jobs to cancel...")
+                                    time.sleep(2)
+                                
+                                if not remaining_jobs:
+                                    logger.log("All SLURM jobs cancelled successfully")
+                                    break
+                                
+                                # If jobs still exist, try force kill
+                                if retry < max_retries - 1:
+                                    logger.log(f"Some jobs still running, trying force kill (attempt {retry + 1}/{max_retries})...")
+                                    subprocess.run(["scancel", "--signal=KILL", *remaining_jobs], check=True)
+                                else:
+                                    logger.log(f"WARNING: Failed to cancel jobs after {max_retries} attempts: {remaining_jobs}")
+                                    
+                            except Exception as e:
+                                logger.log(f"Error during cancellation attempt {retry + 1}: {str(e)}")
+                                if retry == max_retries - 1:
+                                    logger.log("Failed to cancel all jobs, continuing with cleanup...")
 
-        gsheet_updater.batch_update(force=True)
+                    # Kill local jobs one by one (we have to since they're processes)
+                    for job_id in local_jobs:
+                        if process_exists(job_id):
+                            try:
+                                os.kill(job_id, signal.SIGKILL)
+                            except:
+                                pass
 
-    # stop the server
-    if job_manager.open_socket:
-        logger.log("Attempting to stop the server...")
+                # Make sure all jobs are marked as cancelled in job manager
+                logger.log("Updating final status in sheets...")
+                try:
+                    with lock:
+                        shared_jobs_copy = dict(shared_jobs_dict)
+                    with job_manager.manager_lock:
+                        # First ensure all jobs are marked as cancelled in job manager
+                        for job in job_manager.jobs:
+                            if job.job_status in [JobStatus.RUNNING, JobStatus.PENDING]:
+                                job.job_status = JobStatus.CANCELLED
+                                job.updated = True
+                                # Also update in shared dict to ensure consistency
+                                if job.csv_row_id in shared_jobs_dict:
+                                    job_info = shared_jobs_dict[job.csv_row_id].copy()
+                                    job_info['status'] = JobStatus.CANCELLED
+                                    shared_jobs_dict[job.csv_row_id] = job_info
+                        
+                        # Force a final status update
+                        jobs_update_status = update_job_statuses_in_place(
+                            job_manager, shared_jobs_copy, logger, run_locally
+                        )
 
-        # Try sending a SIGTERM first
-        os.kill(job_manager.server_process.pid, signal.SIGTERM)
-        time.sleep(2)  # Give it a mment to terminate
+                        # Make sure all cancelled jobs are marked for update
+                        for job in job_manager.jobs:
+                            if job.job_status == JobStatus.CANCELLED:
+                                job.updated = True
 
-        # If the process is still alive, send a SIGKILL
-        if job_manager.server_process.is_alive():
-            logger.log("Server did not respond to SIGTERM. Sending SIGKILL...")
-            os.kill(job_manager.server_process.pid, signal.SIGKILL)
-            time.sleep(1)  # Give it a moment to ensure it's killed
+                        if gsheet_updater is not None:
+                            logger.log("Pushing final status to sheets...")
+                            # First update
+                            dump_into_gsheet_queue(gsheet_updater, job_manager)
+                            gsheet_updater.batch_update(force=True)
+                            
+                            # Double check all cancelled jobs are in the update queue
+                            for job in job_manager.jobs:
+                                if job.job_status == JobStatus.CANCELLED:
+                                    gsheet_updater.add_to_queue(job.csv_row_id, MONITOR_STATUS_COLUMN, "CANCELLED")
+                                    gsheet_updater.add_to_queue(
+                                        job.csv_row_id,
+                                        MONITOR_LAST_UPDATE_COLUMN,
+                                        datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    )
+                            
+                            # Final update
+                            logger.log("Waiting for sheet update to complete...")
+                            gsheet_updater.batch_update(force=True)
+                            time.sleep(2)  # Give time for update to propagate
+                            logger.log("Sheet update completed.")
 
-        if not job_manager.server_process.is_alive():
-            logger.log("Server stopped successfully.")
-        else:
-            logger.log("Failed to stop the server.")
-    os._exit(0)
-    sys.exit(0)
+                except Exception as e:
+                    logger.log(f"Failed to update sheets: {str(e)}")
+                    logger.log("WARNING: Sheet updates may not have completed!")
+                    time.sleep(5)  # Give a moment for the error to be visible
+                    raise  # Re-raise to ensure we don't silently fail
+
+                logger.log("All jobs cancelled and sheets updated.")
+            except Exception as e:
+                logger.log(f"Error during cancellation: {str(e)}")
+                raise
+            finally:
+                # Only unset flags and exit after everything is truly done
+                is_cancelling = False
+                signal.signal(signal.SIGINT, original_sigint)
+                signal.signal(signal.SIGTERM, original_sigterm)
+                sys.exit(1)
 
 
 def dump_into_gsheet_queue(gsheet_updater, job_manager: JobManager):
@@ -658,417 +703,6 @@ def dump_into_gsheet_queue(gsheet_updater, job_manager: JobManager):
             job_manager.jobs[idx] = job
 
 
-# def monitor_jobs_async_old(async_results, shared_memory_names_or_pids, run_locally : bool, logger, spreadsheet_url, worksheet_name : str,
-#                        shared_row_numbers, csv_path, gsheet_client: GspreadClient):
-#     # Prepare google client for writing the updates. The mechanism of writing the updates here is different
-#     # from the individual jobs. Here we write the updates "globally" to the worksheet as opposed to a local csv file.
-#     # spreadsheet_from_url = logger.get_spreadsheet_by_url(get_spreadsheet_by_urll)
-#
-#     # Define a flag to check if we should exit
-#     should_exit = False
-#
-#     # Signal handler function
-#     def signal_handler(sig, frame):
-#         nonlocal should_exit
-#         run_jobs_flag.value = 0
-#         logger.log("Received exit signal. Preparing to terminate all jobs...")
-#         should_exit = True
-#
-#     # Register the signal handler
-#     signal.signal(signal.SIGINT, signal_handler)
-#     # if spreadsheet_url is None:
-#     #     assert run_locally, "If not running locally, a spreadsheet url must be provided."
-#     #     warn("No spreadsheet url provided, skipping writing to A spreadsheet.")
-#     # else:
-#     #     gsheet_client = make_gspread_client(logger)
-#     #     remote_spreadsheet = gsheet_client.get_spreadsheet_by_url(spreadsheet_url)
-#     #     worksheet = remote_spreadsheet.worksheet(worksheet_name)
-#     #     # We don't have to find the column here, more efficient would be to do it based on the local csv file.
-#     #     # But for now we'll just do it this way to make sure it works
-#     #     column_num_status = get_or_create_column(worksheet, MONITOR_STATUS_COLUMN)
-#     #     column_num_last_update_monitor = get_or_create_column(worksheet, MONITOR_LAST_UPDATE_COLUMN)
-#     #
-#     #     updater = GSheetBatchUpdater(worksheet)
-#     #     # Update the status and last update columns in the beginning
-#     #     update_gsheet(updater, column_num_status, column_num_last_update_monitor, shared_row_numbers)
-#     gsheet_updater = None
-#     if csv_path is None:
-#         assert run_locally, "If not running locally, a csv file must be provided."
-#         warn("No csv file provided, skipping writing to a csv file.")
-#     else:
-#         # Still need to init the client etc
-#         # The writing here must not be attached to a single row. Thus we define our own csv update mechanism.
-#
-#         # try_to_log_in_csv_in_batch(
-#         #     logger,
-#         #     [
-#         #         (WHETHER_TO_RUN_COLUMN, "100"),
-#         #     ]
-#         # )
-#
-#         gsheet_updater = GSheetBatchUpdater(spreadsheet_url, worksheet_name, gsheet_client, logger, csv_path)
-#
-#         # Prepare the updates
-#         shared_row_numbers_lst = list(shared_row_numbers)
-#         column_value_pairs = [
-#             (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
-#             (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
-#         ]
-#
-#         # Add updates to the queue
-#         for row_id_share in shared_row_numbers_lst:
-#             for key, val in column_value_pairs:
-#                 gsheet_updater.add_to_queue(row_id_share, key, val)
-#
-#         # Write updates to CSV and then batch update the Google Sheet
-#         update_status = gsheet_updater.batch_update()
-#         logger.log(f"Update status to GSheets: {update_status}")
-#         # gsheet_updater = GSheetBatchUpdater()
-#         # shared_row_numbers_lst = list(shared_row_numbers)
-#         # column_value_pairs = [
-#         #     (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
-#         #     (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
-#         # ]
-#         # report_stuff_ids = []
-#         # for row_id_share, (key, val) in zip(shared_row_numbers_lst, column_value_pairs):
-#         #     report_stuff_ids.append((row_id_share, key, val))
-#         #
-#         # retrier_factory(logger)(log_csv_for_concurrent)(
-#         #     csv_path,
-#         #     report_stuff_ids
-#         # )
-#         # # [
-#         # #     # (idx + 1, column_name, value)
-#         # #     #     for idx, (column_name, value) in enumerate(column_value_pairs)
-#         # #     (row_id, column_name, value) for (row_id, column_name, value) in
-#         # #     zip(shared_row_numbers, [column_name for column_name, _ in column_value_pairs],
-#         # #         [value for _, value in column_value_pairs])
-#         # # ]
-#         #
-#         # gsheet_client.upload_csvs_to_spreadsheet(spreadsheet_url, [csv_path], [worksheet_name], single_rows_per_csv=[[0]])
-#         # gsheet_client.upload_csvs_to_spreadsheet(spreadsheet_url, [csv_path], [worksheet_name], single_rows_per_csv=[shared_row_numbers_lst])
-#
-#     total_jobs = len(async_results)
-#     if total_jobs == 0:
-#         logger.log("No jobs submitted, exiting.")
-#         return
-#
-#     job_status = ["submitted" for _ in range(total_jobs)]
-#     # To maintain info like the exit code
-#     job_info = [None for _ in range(total_jobs)]
-#
-#     current_sleep_duration = 1  # Start with 3 seconds
-#     sleep_increment = 1  # Increment by 3 seconds each time
-#     max_sleep_duration = 30  # Maximum sleep duration
-#
-#     while not should_exit:
-#         for idx, result in enumerate(async_results):
-#             status_change = False
-#             # this logic is only right for local runs
-#             if run_locally:
-#                 if not result.ready() and job_status[idx] == "submitted":
-#                     job_status[idx] = "running"
-#                     status_change = True
-#                 elif result.ready():
-#                     exit_code = result.get()  # Assuming submit_job returns the exit code
-#                     job_info[idx] = exit_code  # Store the exit code
-#                     if exit_code == 0:
-#                         job_status[idx] = "finished_successfully"
-#                         status_change = True
-#                     else:
-#                         job_status[idx] = "failed"
-#                         job_info[idx] = f"Job failed with exit code {exit_code}"
-#                         status_change = True
-#             else:
-#                 # TODO: add support for SLURM
-#                 raise NotImplementedError("Monitoring for SLURM is not implemented yet.")
-#             if status_change:
-#                 # Update the status and last update columns in the beginning
-#                 if gsheet_updater is not None:
-#                     gsheet_updater.add_to_queue(shared_row_numbers_lst[idx], MONITOR_STATUS_COLUMN, job_status[idx])
-#                     if job_info[idx] is not None:
-#                         gsheet_updater.add_to_queue(shared_row_numbers_lst[idx], MONITOR_EXIT_CODE_COLUMN,
-#                                                     job_info[idx])
-#
-#         # Count the statuses
-#         submitted = submitted_jobs.value
-#         running = job_status.count("running")
-#         finished_successfully = job_status.count("finished_successfully")
-#         failed = job_status.count("failed")
-#
-#         # Display progress and status
-#         last_update_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-#
-#         status_msg = (f"Jobs Progress | Submitted: {submitted} / {total_jobs} | "
-#                       f"Finished: {finished_successfully} / {total_jobs} | "
-#                       f"Failed: {failed} | Last Update: {last_update_time}")
-#
-#         logger.log(status_msg, carriage_return=True)
-#
-#         # Sleep for the current duration
-#         time.sleep(current_sleep_duration)
-#
-#         # Increment the sleep duration for the next iteration, but don't exceed the maximum
-#         current_sleep_duration = min(current_sleep_duration + sleep_increment, max_sleep_duration)
-#
-#         # Periodically we want to report back to Gsheets to indicate status of the jobs.
-#         if gsheet_updater is not None:
-#             gsheet_updater.batch_update()
-#
-#         if running == 0 and finished_successfully + failed == submitted:
-#             logger.log("All jobs finished.")
-#             break
-#
-#     # If we're exiting due to a signal, terminate the jobs
-#     exited_jobs = 0
-#     if should_exit:
-#         running_jobs = sum(1 for result in async_results if not result.ready())
-#         logger.log(f"Number of jobs that were running: {running_jobs}")
-#
-#         # Make sure to update GSheets
-#
-#         # Step 1: Try to terminate all processes gracefully
-#         # for idx, result in enumerate(async_results):
-#         #     if run_locally:
-#         #         if not result.ready():
-#         #             try:
-#         #                 os.kill(shared_memory_names_or_pids[idx]["main_pid"], signal.SIGTERM)
-#         #             except ProcessLookupError:
-#         #                 # PID not found, assume killed
-#         #                 job_status[idx] = "failed"
-#         #     else:
-#         #         # TODO: add job killing for SLURM jobs
-#         #         raise NotImplementedError("Killing SLURM jobs is not implemented yet.")
-#         # Step 2: Wait for a short duration with periodic checks
-#         grace_period = 5
-#
-#         for second in range(1, grace_period + 1):
-#             for idx, result in enumerate(async_results):
-#                 if job_status[idx] == "running":
-#                     status_change = False
-#
-#                     if run_locally:
-#                         if result.ready():
-#                             exited_jobs += 1
-#                             status_change = True
-#                             job_status[idx] = "failed"
-#                             job_info[idx] = "Job gracefully terminated by user"
-#                         elif not process_exists(shared_memory_names_or_pids[idx]["main_pid"]):
-#                             job_status[idx] = "failed"
-#                             job_info[idx] = "Job gracefully terminated by user"
-#                             exited_jobs += 1
-#                             status_change = True
-#                         # elif second == grace_period:  # If we're on the last iteration and the job hasn't exited
-#                         #     os.kill(shared_memory_names_or_pids[idx]["main_pid"], signal.SIGKILL)
-#                         #     exited_jobs += 1
-#                         #     job_status[idx] = "failed"
-#                         #     job_info[idx] = "Job forcefully terminated by user"
-#                         #     status_change = True
-#                     else:
-#                         # TODO: add job killing of SLURM jobs
-#                         raise NotImplementedError("Killing SLURM jobs is not implemented yet.")
-#
-#                     if status_change:
-#                         if gsheet_updater is not None:
-#                             gsheet_updater.add_to_queue(shared_row_numbers_lst[idx], MONITOR_STATUS_COLUMN, job_status[idx])
-#                             if job_info[idx] is not None:
-#                                 gsheet_updater.add_to_queue(shared_row_numbers_lst[idx], MONITOR_EXIT_CODE_COLUMN,
-#                                                             job_info[idx])
-#             logger.log(f"{second}/{grace_period} seconds trying, {exited_jobs}/{running_jobs} jobs exited")
-#
-#             # Break the loop if all processes have exited
-#             if exited_jobs == running_jobs:
-#                 logger.log("All jobs terminated.")
-#                 break
-#
-#             time.sleep(1)  # Sleep for 1 second
-#
-#     failed += exited_jobs
-#
-#     # Print summary of jobs' status
-#     logger.log(f"Number of jobs submitted: {submitted}")
-#     logger.log(f"Number of jobs finished successfully: {finished_successfully}")
-#     logger.log(f"Number of jobs failed: {failed}")
-#
-#     # Make sure to push the updates, if there were any
-#     if gsheet_updater is not None:
-#         gsheet_updater.batch_update(force=True)
-#
-#     # Update the status of all the jobs in the remote sheet
-#     # shared_row_numbers_lst = list(shared_row_numbers)
-#     # column_value_pairs = [
-#     #     (MONITOR_LAST_UPDATE_COLUMN, datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
-#     #     (MONITOR_STATUS_COLUMN, SUBMITTED_STATUS),
-#     # ]
-#     # report_stuff_ids = []
-#     # for row_id_share, result in zip(shared_row_numbers_lst, column_value_pairs):
-#     #     report_stuff_ids.append((row_id_share, result[0], result[1]))
-#     #
-#     # retrier_factory(logger)(log_csv_for_concurrent)(
-#     #     csv_path,
-#     #     report_stuff_ids
-#     # )
-#     # # [
-#     # #     # (idx + 1, column_name, value)
-#     # #     #     for idx, (column_name, value) in enumerate(column_value_pairs)
-#     # #     (row_id, column_name, value) for (row_id, column_name, value) in
-#     # #     zip(shared_row_numbers, [column_name for column_name, _ in column_value_pairs],
-#     # #         [value for _, value in column_value_pairs])
-#     # # ]
-#     #
-#     # gsheet_client.upload_csvs_to_spreadsheet(spreadsheet_url, [csv_path], [worksheet_name], single_rows_per_csv=[[0]])
-#     # gsheet_client.upload_csvs_to_spreadsheet(spreadsheet_url, [csv_path], [worksheet_name],
-#     #                                          single_rows_per_csv=[shared_row_numbers_lst])
-#     #
-
-
-#
-#
-# def monitor_jobs_async(async_results, shared_memory_names_or_pids, run_locally, logger):
-#     total_jobs = len(shared_memory_names_or_pids)
-#     if total_jobs == 0:
-#         return
-#
-#     job_status = ["not_started" for _ in range(total_jobs)]
-#
-#     while True:
-#         for idx, result in enumerate(async_results):
-#             if not result.ready() and job_status[idx] == "not_started":
-#                 job_status[idx] = "running"
-#             elif result.ready():
-#                 exit_code = result.get()  # Assuming submit_job returns the exit code
-#                 if exit_code == 0:
-#                     job_status[idx] = "finished_successfully"
-#                 else:
-#                     job_status[idx] = f"finished_with_error_{exit_code}"
-#
-#         not_started = sum(1 for status in job_status if status == "not_started")
-#         running = sum(1 for status in job_status if status == "running")
-#         finished = total_jobs - not_started - running
-#
-#         # Display progress bar for completed jobs
-#         logger.progress(
-#             "Jobs Completion Progress",
-#             finished,
-#             total_jobs
-#         )
-#
-#         # Display number of jobs not started and running
-#         logger.log(f"Number of jobs not started: {not_started}")
-#         logger.log(f"Number of running jobs: {running}")
-#
-#         if running == 0 and not_started == 0:
-#             break
-#
-#         time.sleep(30)  # Check every 30 seconds
-#
-#
-# def monitor_jobs(shared_memory_names_or_pids, run_locally, logger):
-#     """ Monitor the jobs. Depending on the Python version, `shared_memory_names_or_pids` corresponds to shared memory names or PIDs """
-#
-#     if use_shared_memory:
-#         # Use shared_memory_name as the key if it exists, otherwise default to main_pid
-#         job_status = {job.get('shared_memory_name', job['main_pid']): "running" for job in shared_memory_names_or_pids}
-#     else:
-#         # Use main_pid as the key
-#         job_status = {job['main_pid']: "running" for job in shared_memory_names_or_pids}
-#     total_jobs = len(shared_memory_names_or_pids)
-#
-#     while True:
-#         for key in list(job_status.keys()):
-#             if job_status[key] == "running":
-#                 if run_locally:
-#                     if use_shared_memory:
-#                         # Access the shared memory and check the status
-#                         ex_shm = shared_memory.SharedMemory(name=key)
-#                         dtype = np.dtype([('status', np.int32), ('exit_code', np.int32)])
-#                         status_array = np.ndarray(shape=(1,), dtype=dtype, buffer=ex_shm.buf)
-#
-#                         if status_array[0]['status'] == 0:  # 0 indicates "finished"
-#                             job_status[key] = "finished"
-#                             print(f"Job with key {key} finished with exit code: {status_array[0]['exit_code']}")
-#                             ex_shm.close()
-#                             ex_shm.unlink()
-#
-#                     else:
-#                         # Previous method using PIDs
-#                         try:
-#                             os.kill(key, 0)  # This will not kill the process, just check if it's alive
-#                         except ProcessLookupError:
-#                             # Process is no longer running
-#                             job_status[key] = "finished"
-#                         else:
-#                             all_finished = False
-#
-#                 else:
-#                     # SLURM logic to check job status
-#                     # You might use `squeue` or other SLURM commands to check job status
-#                     # For simplicity, I'm just marking them as finished
-#                     job_status[key] = "finished"  # Replace this with actual SLURM logic
-#
-#         running = sum(1 for status in job_status.values() if status == "running")
-#         finished = sum(1 for status in job_status.values() if status == "finished")
-#         failed = total_jobs - running - finished
-#
-#         # Display progress bar for completed jobs
-#         logger.progress(
-#             "Jobs Completion Progress",
-#             finished,
-#             total_jobs
-#         )
-#
-#         # Display number of failed jobs
-#         if failed > 0:
-#             logger.log(f"Number of failed jobs: {failed}")
-#
-#         if running == 0:
-#             break
-#
-#         time.sleep(30)  # Check every 30 seconds
-
-# def monitor_jobs(shared_job_ids, run_locally, logger):
-#     """ Monitor the jobs. If SLURM, `shared_job_ids` corresponds to job IDs, otherwise to PIDs """
-#
-#     job_status = {job_id: "running" for job_id in shared_job_ids}
-#     total_jobs = len(shared_job_ids)
-#
-#     while True:
-#         for job_id in list(job_status.keys()):
-#             if job_status[job_id] == "running":
-#                 if run_locally:
-#                     # Check if the process is still running
-#                     try:
-#                         os.kill(job_id, 0)  # This will not kill the process, just check if it's alive
-#                     except ProcessLookupError:
-#                         # Process is no longer running
-#                         job_status[job_id] = "finished"
-#                 else:
-#                     # SLURM logic to check job status
-#                     # You might use `squeue` or other SLURM commands to check job status
-#                     # For simplicity, I'm just marking them as finished
-#                     job_status[job_id] = "finished"  # Replace this with actual SLURM logic
-#
-#         running = sum(1 for status in job_status.values() if status == "running")
-#         finished = sum(1 for status in job_status.values() if status == "finished")
-#         failed = total_jobs - running - finished
-#
-#         # Display progress bar for completed jobs
-#         logger.progress(
-#             "Jobs Completion Progress",
-#             finished,
-#             total_jobs
-#         )
-#
-#         # Display number of failed jobs
-#         if failed > 0:
-#             logger.log(f"Number of failed jobs: {failed}")
-#
-#         if running == 0:
-#             break
-#
-#         time.sleep(4)  # Check every 30 seconds
-
-
 def main_with_monitoring(
     make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX, HTTP_PREFIX)
 ):
@@ -1079,20 +713,13 @@ def main_with_monitoring(
     else:
         print(f"We're on cluster region: {cluster_region}, using only the corresponding partitions")
 
-    # Define a flag to check if we should exit
-
     if make_final_cmd is None:
         make_final_cmd = make_final_cmd_slurm
 
     args = parse_args()
-
     max_conc_jobs = -1 if "max_concurrent_jobs" not in args else args.max_concurrent_jobs
-
     use_socket = args.use_socket if args.use_socket is not None else False
-    # TODO: give a more descriptive and accurate name
-    disable_local_loging = (
-        args.disable_local_loging if args.disable_local_loging is not None else False
-    )
+    disable_local_loging = args.disable_local_loging if args.disable_local_loging is not None else False
 
     logger = make_logger()
 
@@ -1105,12 +732,6 @@ def main_with_monitoring(
         logger=logger,
     )
 
-    # if OPEN_SOCKET:
-    #     loop = asyncio.get_event_loop()
-    #     loop.create_task(job_manager.start_server())
-    #     loop.create_task(job_manager.process_messages())
-    #     loop.run_forever()
-
     # Make sure server ip and port are set
     if job_manager.open_socket:
         logger.log("Trying to get server ip and port")
@@ -1118,7 +739,6 @@ def main_with_monitoring(
             time.sleep(1)
 
     csv_path_or_url = args.csv_path
-
     logger.log(f"Fetching csv from: {csv_path_or_url}")
     csv_path, spreadsheet_url, worksheet_name, gspread_client = fetch_csv(csv_path_or_url, logger)
 
@@ -1134,9 +754,9 @@ def main_with_monitoring(
         shared_csv_updates = shared_memory_manager.list()
         shared_default_config_paths = shared_memory_manager.dict()
         shared_row_numbers = shared_memory_manager.list()
-
         shared_jobs_dict = shared_memory_manager.dict()
 
+        # First process all rows to prepare commands
         starmap_args_for_row_processing = [
             (
                 make_final_cmd,
@@ -1165,26 +785,19 @@ def main_with_monitoring(
         ]
 
         if len(starmap_args_for_row_processing):
-            # first_csv_row = starmap_args_for_row_processing[0][1]
-            # check_csv_column_names(first_csv_row, allowed_prefixes)
-
             pool_size = get_pool_size(len(starmap_args_for_row_processing))
-
-            upload_csv = False
-
             with mp.Pool(pool_size) as pool:
+                # Process all rows first to prepare commands
                 pool.starmap(process_csv_row, starmap_args_for_row_processing)
 
                 if len(shared_rows_to_run):
                     assert 2 * len(shared_rows_to_run) == len(shared_csv_updates)
-
                     concurrent_log_func = retrier_factory()(log_csv_for_concurrent)
-
                     concurrent_log_func(csv_path, shared_csv_updates, use_socket=True)
-
                     os.makedirs(os.path.dirname(args.log_file_path), exist_ok=True)
 
-                    starmap_args_for_job_submitting = [
+                    # Prepare job submission arguments
+                    job_submission_args = [
                         (
                             run_cmd,
                             args.log_file_path,
@@ -1198,23 +811,11 @@ def main_with_monitoring(
                         for run_cmd, row_id in zip(shared_rows_to_run, shared_row_numbers)
                     ]
 
-                    # pool.starmap(
-                    #     submit_job,
-                    #     starmap_args_for_job_submitting,
-                    # )
-
-                    async_results = []
-
-                    for args_submit in starmap_args_for_job_submitting:
-                        result = pool.apply_async(submit_job, args_submit)
-                        # result.get()
-                        async_results.append(result)
-
-                    upload_csv = True
-
+                    # Submit jobs in batches and monitor them
                     monitor_jobs_async(
                         job_manager,
-                        async_results,
+                        pool,
+                        job_submission_args,
                         shared_jobs_dict,
                         args.run_locally,
                         logger,
@@ -1224,28 +825,27 @@ def main_with_monitoring(
                         csv_path,
                         gspread_client,
                         lock,
-                        len(starmap_args_for_job_submitting),
+                        len(job_submission_args),
                         inputs_csv,
+                        max_conc_jobs,
                     )
-            # Print all IDs
-            # logger.log(f"Len of spawned jobs: {len(shared_job_objs)}")
 
-            # for job_id in shared_job_objs:
-            #     logger.log(f"Job ID: {job_id}")
-
-            # if upload_csv:  # What's the function of this thing here?
-            #     try_to_upload_csv(
-            #         csv_path,
-            #         spreadsheet_url,
-            #         worksheet_name,
-            #         gspread_client
-            #     )
-    # oh need to close the server and stuff bruv!!!!!!!!!!!!!!!!!!!!!
+    # Clean up server
     if job_manager.open_socket:
-        logger.log("Closing server")
-        job_manager.server_process.terminate()
+        try:
+            logger.log("Attempting to stop the server...")
+            if job_manager.server_process and job_manager.server_process.is_alive():
+                job_manager.server_process.terminate()
+                job_manager.server_process.join(timeout=5)
+                if job_manager.server_process.is_alive():
+                    logger.log("Server didn't terminate gracefully, forcing...")
+                    job_manager.server_process.kill()
+            logger.log("Server stopped successfully")
+        except Exception as e:
+            logger.log(f"Error while stopping server: {str(e)}")
+
     logger.log("Job done, exiting.")
-    sys.exit(0)
+    os._exit(0)
 
 
 def get_pool_size(iterable_len):
@@ -1287,36 +887,22 @@ def submit_job(
     max_conc_jobs=-1,
 ):
     """
-
     row_id is used for identifying the job in the spreadsheet and for updating the status of the job in the shared memory.
-
     """
 
     if not run_jobs_flag.value:
         return "Job Stopped"
 
-    def signal_handler(sig, frame):
-        logger.log("KeyboardInterrupt caught, but continuing...")
-
-    if max_conc_jobs != -1 and not run_locally:
-        raise NotImplementedError("max_conc_jobs is not implemented for SLURM jobs yet.")
-    if run_locally and max_conc_jobs != -1:
-        warnings.warn(
-            "WARNING: when running locally, `max_conc_jobs` only applies to this submission - it doesn't take into account other jobs that might be running. "
-        )
-
-    # Register the signal handler
-    signal.signal(signal.SIGINT, signal_handler)
-
     with open(log_file_path, "w+") as log_file:
         if run_locally:
-
             def get_main_and_child_pids(pid):
                 main_pid = pid
                 child_pids = [child.pid for child in psutil.Process(main_pid).children()]
                 return main_pid, child_pids
 
             while max_conc_jobs != -1 and running_jobs.value >= max_conc_jobs:
+                if not run_jobs_flag.value:
+                    return "Job Stopped"
                 time.sleep(1)
 
             running_jobs.value += 1
@@ -1334,7 +920,7 @@ def submit_job(
                 pass
             # Periodically check if the process is still running
             while process.poll() is None:
-                # Check the run_jobs_flag during execution]
+                # Check the run_jobs_flag during execution
                 if not run_jobs_flag.value:
                     logger.log(f"Stopping job with row ID: {row_id}")
                     # Send a SIGINT signal for graceful exit
@@ -1351,27 +937,22 @@ def submit_job(
                     update_job_status(
                         process, shared_jobs_dict, row_id, lock_manager, cancelled=True
                     )
+                    running_jobs.value -= 1
                     return 1
-                    # return 404
 
                 time.sleep(1)  # Sleep for a short duration before checking again
 
             # Process finished
             update_job_status(process, shared_jobs_dict, row_id, lock_manager)
-
+            running_jobs.value -= 1
             return process.returncode
         else:
-            # SLURM logic
-            # subprocess.call(
-            #     run_cmd,
-            #     stdout=log_file,
-            #     stderr=log_file,
-            #     shell=True
-            # )
-
             timeout_duration = 60
 
             try:
+                if not run_jobs_flag.value:
+                    return "Job Stopped"
+                    
                 output = subprocess.check_output(
                     run_cmd, stderr=subprocess.STDOUT, shell=True, timeout=timeout_duration
                 ).decode("utf-8")
@@ -1383,11 +964,12 @@ def submit_job(
                 else:
                     logger.log("Failed to extract job ID from the output.")
 
-                # logger.log(f"Job ID: {job_id}")
             except subprocess.CalledProcessError as e:
                 print(f"Command failed with error: {e.output.decode('utf-8')}")
+                return 1
             except subprocess.TimeoutExpired:
                 print(f"The command took longer than {timeout_duration} seconds to complete.")
+                return 1
 
             with submitted_jobs_lock:
                 submitted_jobs.value += 1
@@ -1395,7 +977,7 @@ def submit_job(
             with lock_manager:
                 shared_jobs_dict[row_id] = {
                     "job_id": job_id,
-                    "status": "submitted",
+                    "status": JobStatus.PENDING,  # Changed from "submitted" to use JobStatus enum
                 }
 
             return 0
@@ -1478,101 +1060,105 @@ def process_csv_row(
     gpu_fits_cluster = True
     # check if the partition corresponds to login node
     if "slurm:partition" in csv_row:
+        partition = csv_row["slurm:partition"]
         # using galvani's gpus or ferranti's
-        if "h100" in csv_row["slurm:partition"] and cluster_region == CLUSTER.GALVANI:
+        if "h100" in partition and cluster_region == CLUSTER.GALVANI:
             gpu_fits_cluster = False
-        if ("a100" in csv_row["slurm:partition"] and cluster_region == CLUSTER.FERRANTI) or ("2080" in csv_row["slurm:partition"] and cluster_region == CLUSTER.FERRANTI):
+            logger.log(
+                f"Skipping row {row_number} - H100 job not supported on Galvani cluster"
+            )
+            return
+        if ("a100" in partition and cluster_region == CLUSTER.FERRANTI) or ("2080" in partition and cluster_region == CLUSTER.FERRANTI):
             gpu_fits_cluster = False
+            logger.log(
+                f"Skipping row {row_number} - {partition} job not supported on Ferranti cluster"
+            )
+            return
             
-    if not gpu_fits_cluster:
-        logger.log(
-            f"Skipping row {row_number} because it doesn't fit the cluster! Found {csv_row['slurm:partition']} but expected to be in {cluster_region}"
-        )
-    if gpu_fits_cluster and whether_to_run.isnumeric() and int(whether_to_run) != 0:
-        replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
-        replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
+    try:
+        if gpu_fits_cluster and whether_to_run.isnumeric() and int(whether_to_run) != 0:
+            replace_placeholders(csv_row, CURRENT_ROW_PLACEHOLDER, str(row_number))
+            replace_placeholders(csv_row, CURRENT_WORKSHEET_PLACEHOLDER, worksheet_name)
 
-        default_config_path_or_url = csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN]
-        if not default_config_path_or_url in shared_default_config_paths:
-            with lock:
-                try:
-                    default_config_path = fetch_default_config_path(
-                        default_config_path_or_url, logger
-                    )
-                except Exception as e:
-                    # log also row number etc
-                    logger.log(
-                        f"Failed to fetch default config path at {default_config_path_or_url}."
-                        f"\nIt occurs in row {row_number} of {input_csv_path}."
-                    )
-                    raise e
-                shared_default_config_paths[default_config_path_or_url] = default_config_path
-        else:
-            default_config_path = shared_default_config_paths[default_config_path_or_url]
-        if default_config_path is None:
-            print(
-                f"Default config path at {default_config_path_or_url} is None. (occurs in row {row_number} of {input_csv_path})"
+            default_config_path_or_url = csv_row[PATH_TO_DEFAULT_CONFIG_COLUMN]
+            if not default_config_path_or_url in shared_default_config_paths:
+                with lock:
+                    try:
+                        default_config_path = fetch_default_config_path(
+                            default_config_path_or_url, logger
+                        )
+                    except Exception as e:
+                        # log also row number etc
+                        logger.log(
+                            f"Failed to fetch default config path at {default_config_path_or_url}."
+                            f"\nIt occurs in row {row_number} of {input_csv_path}."
+                        )
+                        raise e
+                    shared_default_config_paths[default_config_path_or_url] = default_config_path
+            else:
+                default_config_path = shared_default_config_paths[default_config_path_or_url]
+            if default_config_path is None:
+                error_msg = f"Default config path at {default_config_path} is None. (occurs in row {row_number} of {input_csv_path})"
+                logger.log(error_msg)
+                raise ValueError(error_msg)
+            if not os.path.exists(default_config_path):
+                error_msg = f"Default config path at {default_config_path} does not exist (occurs in row {row_number} of {input_csv_path})"
+                logger.log(error_msg)
+                raise FileNotFoundError(error_msg)
+
+            exp_dir = normalize_path(os.path.dirname(default_config_path))
+            exp_name = os.path.basename(exp_dir)
+
+            default_config = read_yaml(default_config_path)
+
+            if disable_local_loging:
+                if "logging" in default_config and isinstance(default_config["logging"], dict):
+                    default_config["logging"]["use_wandb"] = False
+                    default_config["logging"]["gdrive_storage_folder"] = None
+
+            _, new_config_path = make_new_config(
+                csv_row,
+                row_number,
+                input_csv_path,
+                default_config,
+                exp_dir,
+                spreadsheet_url,
+                worksheet_name,
+                server_ip,
+                server_port,
+                run_locally,
             )
-            raise
-        if not os.path.exists(default_config_path):
-            print(
-                f"Default config path at {default_config_path} does not exist (occurs in row {row_number} of {input_csv_path})"
+
+            cmd_as_string = make_task_cmd(
+                new_config_path,
+                conda_env,
+                normalize_path(csv_row[MAIN_PATH_COLUMN]),
+                csv_row,  # pass the row since might need to overwrite running command
             )
-            raise
 
-        exp_dir = normalize_path(os.path.dirname(default_config_path))
-        exp_name = os.path.basename(exp_dir)
+            log_folder = os.path.dirname(log_file_path)
+            if not os.path.exists(log_folder):
+                with lock:
+                    os.makedirs(log_folder, exist_ok=True)
 
-        default_config = read_yaml(default_config_path)
+            if run_locally:
+                final_cmd = "{}".format(cmd_as_string)
+            else:
+                final_cmd = make_final_cmd(csv_row, exp_name, log_file_path, cmd_as_string)
 
-        if disable_local_loging:
-            if "logging" in default_config and isinstance(default_config["logging"], dict):
-                default_config["logging"]["use_wandb"] = False
-                default_config["logging"]["gdrive_storage_folder"] = None
+        if final_cmd is not None:
+            shared_csv_updates.append((row_number, STATUS_CSV_COLUMN, SUBMITTED_STATUS))
+            shared_csv_updates.append((row_number, WHETHER_TO_RUN_COLUMN, "0"))
+            shared_rows_to_run.append(final_cmd)
+            shared_row_numbers.append(row_number)
 
-        _, new_config_path = make_new_config(
-            csv_row,
-            row_number,
-            input_csv_path,
-            default_config,
-            exp_dir,
-            spreadsheet_url,
-            worksheet_name,
-            server_ip,
-            server_port,
-            run_locally,
-        )
-
-        cmd_as_string = make_task_cmd(
-            new_config_path,
-            conda_env,
-            normalize_path(csv_row[MAIN_PATH_COLUMN]),
-            csv_row,  # pass the row since might need to overwrite running command
-        )
-
-        log_folder = os.path.dirname(log_file_path)
-        if not os.path.exists(log_folder):
-            with lock:
-                os.makedirs(log_folder, exist_ok=True)
-
-        if run_locally:
-            # final_cmd = "{} &> {}".format(cmd_as_string, log_file_path)
-            final_cmd = "{}".format(cmd_as_string)
-            # print(
-            #     f"the command would be {make_final_cmd(csv_row, exp_name, log_file_path, cmd_as_string)}"
-            # )
-        else:
-            final_cmd = make_final_cmd(csv_row, exp_name, log_file_path, cmd_as_string)
-
-    if final_cmd is not None:
-        shared_csv_updates.append((row_number, STATUS_CSV_COLUMN, SUBMITTED_STATUS))
-        shared_csv_updates.append((row_number, WHETHER_TO_RUN_COLUMN, "0"))
-        shared_rows_to_run.append(final_cmd)
-        shared_row_numbers.append(row_number)
-
-    with lock:
-        current_step.value += 1
-        logger.progress("Rows processing.", current_step.value, total_rows)
+        with lock:
+            current_step.value += 1
+            logger.progress("Rows processing.", current_step.value, total_rows)
+            
+    except Exception as e:
+        logger.log(f"Error processing row {row_number}: {str(e)}\nTraceback: {traceback.format_exc()}")
+        raise  # Re-raise the exception after logging
 
 
 def make_final_cmd_slurm(csv_row, exp_name, log_file_path, cmd_as_string):
