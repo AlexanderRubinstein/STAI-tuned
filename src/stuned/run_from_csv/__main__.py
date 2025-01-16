@@ -1060,19 +1060,29 @@ def process_csv_row(
     gpu_fits_cluster = True
     # check if the partition corresponds to login node
     if "slurm:partition" in csv_row:
-        partition = csv_row["slurm:partition"]
-        # using galvani's gpus or ferranti's
-        if "h100" in partition and cluster_region == CLUSTER.GALVANI:
-            gpu_fits_cluster = False
-            logger.log(
-                f"Skipping row {row_number} - H100 job not supported on Galvani cluster"
-            )
+        try:
+            partition = csv_row["slurm:partition"]
+        except Exception as e:
+            logger.log(f"Skipping row {row_number} - 'slurm:pa  rtition' not found in csv_row")
+            logger.log(f"Error: {e}")
             return
-        if ("a100" in partition and cluster_region == CLUSTER.FERRANTI) or ("2080" in partition and cluster_region == CLUSTER.FERRANTI):
-            gpu_fits_cluster = False
-            logger.log(
-                f"Skipping row {row_number} - {partition} job not supported on Ferranti cluster"
-            )
+        # using galvani's gpus or ferranti's
+        try:
+            if "h100" in partition and cluster_region == CLUSTER.GALVANI:
+                gpu_fits_cluster = False
+                logger.log(
+                    f"Skipping row {row_number} - H100 job not supported on Galvani cluster"
+                )
+                return
+            if ("a100" in partition and cluster_region == CLUSTER.FERRANTI) or ("2080" in partition and cluster_region == CLUSTER.FERRANTI):
+                gpu_fits_cluster = False
+                logger.log(
+                    f"Skipping row {row_number} - {partition} job not supported on Ferranti cluster"
+                )
+                return
+        except Exception as e:
+            logger.log(f"Skipping row {row_number} - 'slurm:partition' not found in csv_row")
+            logger.log(f"Error: {e}")
             return
             
     try:
