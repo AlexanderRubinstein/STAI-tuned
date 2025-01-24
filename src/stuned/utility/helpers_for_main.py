@@ -54,9 +54,15 @@ def get_diff_with_unstaged_changes(repo):
         # Get the diff between the working directory and the index (unstaged changes)
         diff = repo.index.diff(None, create_patch=True)  # None indicates working tree vs. index
 
-        # Format the diff into a readable string
-        diff_text = "\n".join(d.diff.decode("utf-8") for d in diff if d.diff)
-        return diff_text
+        # Format the diff to include file names and changes
+        diff_output = []
+        for d in diff:
+            file_name = d.a_path  # Path of the file
+            diff_content = d.diff.decode("utf-8")  # The actual diff
+            diff_output.append(f"File: {file_name}\n{diff_content}")
+
+        # Join all diff entries into a single string
+        return "\n\n".join(diff_output)
 
     except Exception as e:
         return f"Could not get diff because an error occurred: {e}"
