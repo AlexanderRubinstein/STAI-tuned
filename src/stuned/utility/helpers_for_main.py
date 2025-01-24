@@ -36,6 +36,32 @@ def parse_args():
     return parser.parse_args()
 
 
+def get_diff_with_unstaged_changes(repo):
+    """
+    Get the diff between unstaged changes and the latest commit in a Git repository.
+
+    Args:
+        repo_path (str): Path to the local Git repository (default: current directory).
+
+    Returns:
+        str: The diff as a string.
+    """
+    try:
+
+        if repo.bare:
+            raise Exception("The repository is not valid.")
+
+        # Get the diff between the working directory and the index (unstaged changes)
+        diff = repo.index.diff(None, create_patch=True)  # None indicates working tree vs. index
+
+        # Format the diff into a readable string
+        diff_text = "\n".join(d.diff.decode("utf-8") for d in diff if d.diff)
+        return diff_text
+
+    except Exception as e:
+        return f"Could not get diff because an error occurred: {e}"
+
+
 def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
 
     def wrapper_for_experiment(run_experiment):
@@ -74,6 +100,10 @@ def prepare_wrapper_for_experiment(check_config=None, patch_config=None):
                     repo = git.Repo(get_project_root_path())
                     sha = repo.head.object.hexsha
                     logger.log(f"Hash of current git commit: {sha}")
+                    logger.log(
+                        f"Diff with unstaged changes:\n "
+                        f"{get_diff_with_unstaged_changes(repo)}"
+                    )
 
                     if check_config is not None:
                         logger.log(
