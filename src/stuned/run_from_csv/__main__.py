@@ -604,7 +604,7 @@ def fill_condor_sub_script(
     condor_sub_file.write("##################################\n\n")
 
     condor_sub_file.write(f"executable = {condor_sh_file_path}\n")
-    os.system(f'chmod +x {condor_sh_file_path}')
+    os.system(f'chmod 777 {condor_sh_file_path}')
     # condor_sub_file.write(f"arguments = {condor_sh_file_path} $(input_argument1) $(input_argument2)\n\n")
 
     # # Standard log files
