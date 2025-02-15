@@ -325,7 +325,7 @@ def get_pool_size(iterable_len):
 
 def submit_job(run_cmd, log_file_path):
     print(f"Submitting job: {run_cmd}") # debug
-    raise Exception("Stop here, this is not a real error, we just want to see the job command") # debug
+    # raise Exception("Stop here, this is not a real error, we just want to see the job command") # debug
     with open(log_file_path, 'w+') as log_file:
         subprocess.call(
             run_cmd,
