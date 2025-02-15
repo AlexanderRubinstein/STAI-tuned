@@ -839,15 +839,20 @@ def make_condor_args_dict(csv_row, exp_name, log_file):
     # os.makedirs(os.path.dirname(all_slurm_args_dict["output"]), exist_ok=True)
     # os.makedirs(os.path.dirname(all_slurm_args_dict["error"]), exist_ok=True)
 
+    make_folder_if_needed(get_with_assert(all_condor_args_dict, "output"))
+    make_folder_if_needed(get_with_assert(all_condor_args_dict, "error"))
+
     return all_condor_args_dict
+
+
+def make_folder_if_needed(folder_path):
+    # folder_path = os.path.dirname(path)
+    if folder_path != '':
+        os.makedirs(folder_path, exist_ok=True)
 
 
 def make_slurm_args_dict(csv_row, exp_name, log_file):
 
-    def make_folder_if_needed(path):
-        folder_path = os.path.dirname(path)
-        if folder_path != '':
-            os.makedirs(folder_path, exist_ok=True)
 
     all_slurm_args_dict = copy.deepcopy(DEFAULT_SLURM_ARGS_DICT)
 
@@ -864,8 +869,8 @@ def make_slurm_args_dict(csv_row, exp_name, log_file):
 
     all_slurm_args_dict |= specified_slurm_args
 
-    make_folder_if_needed(all_slurm_args_dict["output"])
-    make_folder_if_needed(all_slurm_args_dict["error"])
+    make_folder_if_needed(os.path.dirname(all_slurm_args_dict["output"]))
+    make_folder_if_needed(os.path.dirname(all_slurm_args_dict["error"]))
 
     return all_slurm_args_dict
 
