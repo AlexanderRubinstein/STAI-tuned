@@ -666,7 +666,12 @@ def make_final_cmd_condor(
     bid = get_with_assert(condor_args_dict, CONDOR_BID_KEY)
     condor_args_dict.pop(CONDOR_BID_KEY)
 
-    with (NamedTemporaryFile('w', delete=False)) as tmp_sh_file:
+    tmp_dir_for_sh_file = os.path.join(
+        os.path.expanduser('~'),
+        "tmp_sh_files_for_condor"
+    )
+    os.makedirs(tmp_dir_for_sh_file, exist_ok=True)
+    with (NamedTemporaryFile('w', delete=False, dir=tmp_dir_for_sh_file)) as tmp_sh_file:
         fill_condor_sh_script(
             condor_sh_file=tmp_sh_file,
             conda_env=conda_env,
