@@ -25,7 +25,8 @@ from utility.utils import (
     expand_csv,
     retrier_factory,
     is_number,
-    range_for_each_group
+    range_for_each_group,
+    get_with_assert
 )
 from utility.configs import (
     AUTOGEN_PREFIX,
@@ -38,6 +39,9 @@ from utility.logger import (
     WHETHER_TO_RUN_COLUMN,
     DELTA_PREFIX,
     SLURM_PREFIX,
+    CONDOR_PREFIX,
+    CONDOR_BID_KEY,
+    ENV_VAR_PREFIX,
     PREFIX_SEPARATOR,
     PLACEHOLDERS_FOR_DEFAULT,
     make_logger,
@@ -68,6 +72,9 @@ DEFAULT_SLURM_ARGS_DICT = {
     "error": DEV_NULL,
     "output": DEV_NULL
 }
+DEFAULT_CONDOR_ARGS_DICT = {
+
+}
 EMPTY_STRING = "EMPTY_STRING"
 EXPANDED_CSV_PREFIX = "expanded_"
 CURRENT_ROW_PLACEHOLDER = "__ROW__"
@@ -92,11 +99,25 @@ def parse_args():
         required=True,
         help="path to csv file"
     )
+    # parser.add_argument(
+    #     "--python_path",
+    #     type=str,
+    #     required=False,
+    #     help="path to python executable"
+    # )
+    parser.add_argument(
+        "--cluster_type",
+        type=str,
+        required=False,
+        choices=["slurm", "condor"],
+        help="cluster type",
+        default="slurm"
+    )
     parser.add_argument(
         "--conda_env",
         type=str,
         required=False,
-        default=DEFAULT_ENV_NAME,
+        default=None,
         help="conda environment name"
     )
     parser.add_argument(
@@ -136,12 +157,26 @@ def get_default_log_file_path():
     )
 
 
-def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
-
-    if make_final_cmd is None:
-        make_final_cmd = make_final_cmd_slurm
+def main():
 
     args = parse_args()
+
+    # make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)
+    if args.cluster_type == "slurm":
+        assert args.conda_env is not None, \
+            "Conda env is required for Slurm"
+        make_final_cmd = make_final_cmd_slurm
+        allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)
+    elif args.cluster_type == "condor":
+        assert args.conda_env is not None, \
+            "Conda env is required for Condor"
+        make_final_cmd = make_final_cmd_condor
+        allowed_prefixes=(CONDOR_PREFIX, DELTA_PREFIX, ENV_VAR_PREFIX)
+    else:
+        raise Exception(f"Unknown cluster type: {args.cluster_type}")
+
+    # if make_final_cmd is None:
+    #     make_final_cmd = make_final_cmd_slurm
 
     # TODO(Alex | 26.01.2024): remove once tested for remote runs
     if not args.run_locally:
@@ -188,7 +223,8 @@ def main(make_final_cmd=None, allowed_prefixes=(SLURM_PREFIX, DELTA_PREFIX)):
                 shared_default_config_paths,
                 shared_csv_updates,
                 current_step,
-                len(inputs_csv)
+                len(inputs_csv),
+                # args.python_path
             )
                 for row_number, csv_row in inputs_csv.items()
         ]
@@ -288,6 +324,8 @@ def get_pool_size(iterable_len):
 
 
 def submit_job(run_cmd, log_file_path):
+    print(f"Submitting job: {run_cmd}") # debug
+    raise Exception("Stop here, this is not a real error, we just want to see the job command") # debug
     with open(log_file_path, 'w+') as log_file:
         subprocess.call(
             run_cmd,
@@ -373,7 +411,8 @@ def process_csv_row(
     shared_default_config_paths,
     shared_csv_updates,
     current_step,
-    total_rows
+    total_rows,
+    # python_path
 ):
 
     final_cmd = None
@@ -420,11 +459,11 @@ def process_csv_row(
             spreadsheet_url,
             worksheet_name
         )
-
+        exp_exec_path = normalize_path(csv_row[MAIN_PATH_COLUMN])
         cmd_as_string = make_task_cmd(
             new_config_path,
             conda_env,
-            normalize_path(csv_row[MAIN_PATH_COLUMN])
+            exp_exec_path
         )
 
         log_folder = os.path.dirname(log_file_path)
@@ -439,7 +478,11 @@ def process_csv_row(
                 csv_row,
                 exp_name,
                 log_file_path,
-                cmd_as_string
+                cmd_as_string,
+                exp_config_path=new_config_path,
+                exp_main_path=exp_exec_path,
+                conda_env=conda_env,
+                # python_path=python_path
             )
 
     if final_cmd is not None:
@@ -457,7 +500,204 @@ def process_csv_row(
         )
 
 
-def make_final_cmd_slurm(csv_row, exp_name, log_file_path, cmd_as_string):
+# def fill_condor_sh_script(condor_sh_file):
+
+#     condor_sh_file.write("#!/bin/bash\n")
+
+#     # for slurm_arg, value in slurm_args_dict.items():
+#     #     sbatch_file.write("#SBATCH --{}={}\n".format(slurm_arg, value))
+
+#     # sbatch_file.write(command)
+#     condor_sh_file.flush()
+
+
+
+def fill_condor_sh_script(
+    condor_sh_file,
+    conda_env,
+    env_vars,
+    exp_main_path,
+    exp_config_path
+):
+    """Fill shell script with required commands and environment setup."""
+    condor_sh_file.write("#!/bin/bash\n")
+    condor_sh_file.write("nvidia-smi\n\n")
+
+    # Load environment
+    condor_sh_file.write("# Load environment\n")
+    condor_sh_file.write(f"source {os.path.expanduser('~/python/python/etc/profile.d/conda.sh')}\n")
+    condor_sh_file.write(f"conda activate {conda_env}\n\n")
+
+    # Environment variables
+
+    # Define working directory
+    for env_var, value in env_vars.items():
+        condor_sh_file.write(f"export {env_var}={value}\n")
+    # condor_sh_file.write(f"export WORK_DIR={os.path.expanduser('~/jailbreak_filter/llm-threat-model-private')}\n")
+    # condor_sh_file.write(f"export CUDA_HOME={os.path.expanduser('~/software/nvidia/cuda-12.1')}\n")
+    # condor_sh_file.write("export LD_LIBRARY_PATH=/is/software/nvidia/cuda-12.1/lib64\n")
+    # condor_sh_file.write("export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7\n")
+    # condor_sh_file.write("export WANDB_SERVICE_WAIT=300\n")
+    # condor_sh_file.write(f"export TRANSFORMERS_CACHE={os.path.expanduser('~/huggingface/hub/models')}\n")
+    # condor_sh_file.write(f"export HF_HOME={os.path.expanduser('~/huggingface')}\n")
+    # condor_sh_file.write(f"export VLLM_NCCL_SO_PATH={os.path.expanduser('~/python/python/envs/jailbreak_filter/lib/python3.10/site-packages/nvidia/nccl/lib/libnccl.so.2')}\n")
+    # condor_sh_file.write('export HOST_IP=$(hostname -I | awk \'{print $1}\')\n')
+    # condor_sh_file.write("export TRANSFORMERS_OFFLINE=1\n")
+    # condor_sh_file.write("export RAY_ADDRESS=${HOST_IP}:6354\n\n")
+
+    # Change directory
+    condor_sh_file.write('cd $WORK_DIR || exit 1\n\n')
+
+    # # Set variables
+    # condor_sh_file.write('base_dir="results_new"\n')
+    # condor_sh_file.write('experiment_name="${experiment}"\n')
+    # condor_sh_file.write('behaviors_path="./data/behavior_datasets/harmbench_behaviors_all_no_copyright.csv"\n')
+    # condor_sh_file.write('#behaviors_path="./data/adv_bench.csv"\n')
+    # condor_sh_file.write('save_dir=$WORK_DIR/${base_dir}/${method_name}/${experiment}/test_cases\n\n')
+
+    # # Echo parameters
+    # condor_sh_file.write('echo "method_name=$method_name"\n')
+    # condor_sh_file.write('echo "experiment_name=$experiment_name"\n')
+    # condor_sh_file.write('echo "behaviors_path=$behaviors_path"\n')
+    # condor_sh_file.write('echo "save_dir=$save_dir"\n')
+    # condor_sh_file.write('echo "subset=[$start_idx, $end_idx]"\n')
+    # condor_sh_file.write('echo "run_id=$run_id"\n')
+    # condor_sh_file.write('echo "seed=$seed"\n')
+    # condor_sh_file.write('#echo "search_width=$search_width"\n')
+    # condor_sh_file.write('echo "jb_filter_window_size=$jb_ws"\n\n')
+
+    # # Conditional Ray setup
+    # condor_sh_file.write('if [ "$method_name" = "PAIR" ]; then\n')
+    # condor_sh_file.write(f'    export PATH="{os.path.expanduser("~/.local/bin")}:$PATH"\n')
+    # condor_sh_file.write('    ray start --head --port=6354\n')
+    # condor_sh_file.write('    ray status\n')
+    # condor_sh_file.write('fi\n\n')
+
+    # Construct the command
+    # condor_sh_file.write("# Construct the command\n")
+    condor_sh_file.write(f'cmd="python -u {exp_main_path} \\\n')
+    condor_sh_file.write(f'    --config_path {exp_config_path} "\n')
+    condor_sh_file.write(f'eval $cmd\n')
+
+    condor_sh_file.flush()
+
+
+# def fill_condor_sub_script(condor_sub_file, condor_sh_file_path):
+
+#     condor_sub_file.write("???\n")
+
+#     # for slurm_arg, value in slurm_args_dict.items():
+#     #     sbatch_file.write("#SBATCH --{}={}\n".format(slurm_arg, value))
+
+#     # sbatch_file.write(command)
+#     condor_sub_file.flush()
+
+
+def fill_condor_sub_script(
+    condor_sub_file,
+    condor_sh_file_path,
+    condor_args_dict
+):
+    """Fill HTCondor submission script with required parameters."""
+    condor_sub_file.write("##################################\n")
+    condor_sub_file.write("# HTCondor submission file for Python script execution with the arguments\n")
+    condor_sub_file.write("##################################\n\n")
+
+    condor_sub_file.write(f"executable = {condor_sh_file_path}\n")
+    # condor_sub_file.write(f"arguments = {condor_sh_file_path} $(input_argument1) $(input_argument2)\n\n")
+
+    # # Standard log files
+    # condor_sub_file.write("error = log/job.$(Cluster).$(Process).err\n")
+    # condor_sub_file.write("output = log/job.$(Cluster).$(Process).out\n")
+    # condor_sub_file.write("log = log/job.$(Cluster).$(Process).log\n\n")
+
+    # # Resource requests
+    # condor_sub_file.write("request_memory = 116GB\n")
+    # condor_sub_file.write("request_cpus = 1\n")
+    # condor_sub_file.write("request_gpus = 1\n\n")
+
+    # # Requirements
+    # condor_sub_file.write("requirements = (CUDAGlobalMemoryMb >= 40000)\n\n")
+
+    # # GPU requirements
+    # condor_sub_file.write('# && (CUDACapability >= 8.0)\n')
+    # condor_sub_file.write('requirements = (CUDADeviceName == "NVIDIA A100-SXM4-80GB" || # && CUDADeviceName == "NVIDIA A100-SXM4-80GB" || # && CUDADeviceName == "NVIDIA H100" || # && CUDADeviceName == "NVIDIA H800 HBM3")\n\n')
+
+    # # Job management
+    # condor_sub_file.write("MaxTime = 19999\n")
+    # condor_sub_file.write("periodic_remove = (JobStatus =?= 2) && ((CurrentTime - JobCurrentStartDate) >= $(MaxTime))\n")
+    # condor_sub_file.write('JobBatchName = "jupyter"\n\n')
+
+    for condor_arg, value in condor_args_dict.items():
+        condor_sub_file.write(f"{condor_arg} = {value}\n")
+
+    # Queue section
+    condor_sub_file.write("##################################\n")
+    # condor_sub_file.write("# Передача двух аргументов через конструкцию Queue\n")
+    # condor_sub_file.write("# Если значений не совпадает размеры файлов нельзя не использовать.\n")
+    # condor_sub_file.write("Queue input_argument1, input_argument2 from (\n")
+    # condor_sub_file.write("    значение_аргумента1 значение_аргумента2\n")
+    # condor_sub_file.write(")\n")
+    condor_sub_file.write("queue\n")
+
+    condor_sub_file.flush()
+
+
+def make_final_cmd_condor(
+    csv_row,
+    exp_name,
+    log_file_path,
+    cmd_as_string,
+    exp_config_path,
+    exp_main_path,
+    conda_env,
+    # python_path
+):
+    condor_args_dict = make_condor_args_dict(
+        csv_row,
+        exp_name,
+        log_file_path
+    )
+    env_vars = extract_from_csv_row_by_prefix(
+        csv_row,
+        ENV_VAR_PREFIX + PREFIX_SEPARATOR,
+        ignore_values=PLACEHOLDERS_FOR_DEFAULT
+    )
+    bid = get_with_assert(condor_args_dict, CONDOR_BID_KEY)
+    condor_args_dict.pop(CONDOR_BID_KEY)
+
+    with (NamedTemporaryFile('w', delete=False)) as tmp_sh_file:
+        fill_condor_sh_script(
+            condor_sh_file=tmp_sh_file,
+            conda_env=conda_env,
+            env_vars=env_vars,
+            exp_main_path=exp_main_path,
+            exp_config_path=exp_config_path
+        )
+        condor_sh_path = tmp_sh_file.name
+
+    with (NamedTemporaryFile('w', delete=False)) as tmp_sub_file:
+        fill_condor_sub_script(
+            condor_sub_file=tmp_sub_file,
+            condor_sh_file_path=condor_sh_path,
+            condor_args_dict=condor_args_dict
+        )
+        condor_sub_path = tmp_sub_file.name
+
+    final_cmd = f"condor_submit_bid {bid} {condor_sub_path}"
+    return final_cmd
+
+
+def make_final_cmd_slurm(
+    csv_row,
+    exp_name,
+    log_file_path,
+    cmd_as_string,
+    exp_config_path=None,
+    exp_main_path=None,
+    conda_env=None,
+    # python_path=None
+):
 
     slurm_args_dict = make_slurm_args_dict(
         csv_row,
@@ -579,7 +819,35 @@ def make_task_cmd(new_config_path, conda_env, exec_path):
     )
 
 
+def make_condor_args_dict(csv_row, exp_name, log_file):
+
+    all_condor_args_dict = copy.deepcopy(DEFAULT_CONDOR_ARGS_DICT)
+
+    # all_slurm_args_dict["job-name"] = exp_name
+
+    # all_slurm_args_dict["output"] = log_file
+    # all_slurm_args_dict["error"] = log_file
+
+    specified_condor_args = extract_from_csv_row_by_prefix(
+        csv_row,
+        CONDOR_PREFIX + PREFIX_SEPARATOR,
+        ignore_values=PLACEHOLDERS_FOR_DEFAULT
+    )
+
+    all_condor_args_dict |= specified_condor_args
+
+    # os.makedirs(os.path.dirname(all_slurm_args_dict["output"]), exist_ok=True)
+    # os.makedirs(os.path.dirname(all_slurm_args_dict["error"]), exist_ok=True)
+
+    return all_condor_args_dict
+
+
 def make_slurm_args_dict(csv_row, exp_name, log_file):
+
+    def make_folder_if_needed(path):
+        folder_path = os.path.dirname(path)
+        if folder_path != '':
+            os.makedirs(folder_path, exist_ok=True)
 
     all_slurm_args_dict = copy.deepcopy(DEFAULT_SLURM_ARGS_DICT)
 
@@ -596,8 +864,8 @@ def make_slurm_args_dict(csv_row, exp_name, log_file):
 
     all_slurm_args_dict |= specified_slurm_args
 
-    os.makedirs(os.path.dirname(all_slurm_args_dict["output"]), exist_ok=True)
-    os.makedirs(os.path.dirname(all_slurm_args_dict["error"]), exist_ok=True)
+    make_folder_if_needed(all_slurm_args_dict["output"])
+    make_folder_if_needed(all_slurm_args_dict["error"])
 
     return all_slurm_args_dict
 
