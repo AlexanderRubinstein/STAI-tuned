@@ -43,7 +43,7 @@ PROFILER_OUTPUT_ROW_LIMIT = 10
 DEFAULT_FILE_CHUNK_SIZE = 4096
 EMPTY_CSV_TOKEN = "?"
 DEFAULT_ENV_NAME = os.environ.get("DEFAULT_ENV")
-TEST_ENV_NAME = os.environ["TEST_ENV"]
+TEST_ENV_NAME = os.environ.get("TEST_ENV")
 BASHRC_PATH = os.path.join(
     os.environ["HOME"],
     (
