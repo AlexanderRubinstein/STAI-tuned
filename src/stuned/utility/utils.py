@@ -32,6 +32,7 @@ import re
 import matplotlib.pyplot as plt
 import pandas as pd
 import threading
+import gdown
 
 
 MAX_BUFFER_SIZE = 1000
@@ -42,8 +43,8 @@ PROFILER_GROUP_BY_STACK_N = 5
 PROFILER_OUTPUT_ROW_LIMIT = 10
 DEFAULT_FILE_CHUNK_SIZE = 4096
 EMPTY_CSV_TOKEN = "?"
-DEFAULT_ENV_NAME = os.environ["DEFAULT_ENV"]
-TEST_ENV_NAME = os.environ["TEST_ENV"]
+DEFAULT_ENV_NAME = os.environ.get("DEFAULT_ENV", None)
+TEST_ENV_NAME = os.environ.get("TEST_ENV", None)
 BASHRC_PATH = os.path.join(
     os.environ["HOME"],
     (
@@ -2088,3 +2089,45 @@ def apply_pairwise(iterable, func):
     for a, b in pairs:
         res.append(func(a, b))
     return res
+
+
+def download_file(file_path, download_url):
+    if not os.path.exists(file_path):
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        if "google" in download_url:
+            download_type = "gdrive"
+        else:
+            download_type = "wget"
+
+        if download_type == "wget":
+            run_cmd_through_popen(
+                f"wget {download_url} -O {file_path}",
+                logger=None
+            )
+        else:
+            assert download_type == "gdrive"
+            gdown.download(
+                download_url,
+                file_path,
+                quiet=False,
+                use_cookies=False,
+                fuzzy=True
+            )
+
+
+def extract_tar(tar_path, folder):
+    run_cmd_through_popen(
+        f"tar -zvxf {tar_path} -C {folder}",
+        logger=None
+    )
+
+
+def download_and_extract_tar(data_dir, download_url, name=None):
+    if name is None:
+        cur_time = str(get_current_time()).replace(' ', '_')
+        name = f"tmp_tar_{cur_time}"
+    parent_folder = os.path.dirname(data_dir)
+    downloaded_tar = os.path.join(parent_folder, f"{name}.tar.gz")
+    download_file(downloaded_tar, download_url)
+    extract_tar(downloaded_tar, parent_folder)
+    remove_file_or_folder(downloaded_tar)
