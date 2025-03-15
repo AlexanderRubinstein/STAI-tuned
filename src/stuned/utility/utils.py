@@ -2131,3 +2131,9 @@ def download_and_extract_tar(data_dir, download_url, name=None):
     download_file(downloaded_tar, download_url)
     extract_tar(downloaded_tar, parent_folder)
     remove_file_or_folder(downloaded_tar)
+
+
+def optionally_make_dir(path):
+    base_dir = os.path.dirname(path)
+    if base_dir != "":
+        os.makedirs(base_dir, exist_ok=True)
