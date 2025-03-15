@@ -33,6 +33,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import threading
 import gdown
+from urllib.parse import urlparse
+import requests
 
 
 MAX_BUFFER_SIZE = 1000
@@ -2106,6 +2108,10 @@ def download_file(file_path, download_url):
             )
         else:
             assert download_type == "gdrive"
+            assert "uc?id=" in download_url, \
+                "When using gdown, url should be of form: " \
+                "https://drive.google.com/uc?id=<file_id>"
+
             gdown.download(
                 download_url,
                 file_path,
@@ -2116,17 +2122,56 @@ def download_file(file_path, download_url):
 
 
 def extract_tar(tar_path, folder):
+    is_gzip = tar_path.endswith(".tar.gz")
+    tar_flags = "-vx"
+    if is_gzip:
+        tar_flags += 'z'
+    tar_flags += 'f'
     run_cmd_through_popen(
-        f"tar -zvxf {tar_path} -C {folder}",
+        f"tar {tar_flags} {tar_path} -C {folder}",
         logger=None
     )
 
 
-def download_and_extract_tar(parent_folder, download_url, name=None):
+def get_filename_from_url(url):
+
+    filename = None
+
+    # Method 1: Try to get from Content-Disposition header
+    try:
+        response = requests.head(url)
+        if 'Content-Disposition' in response.headers:
+            # Look for filename in header
+            content_disposition = response.headers['Content-Disposition']
+            if 'filename=' in content_disposition:
+                filename = content_disposition.split('filename=')[1].strip('"\'')
+    except:
+        pass
+
+    # Method 2: Parse from URL path
+    if filename is None:
+        filename = os.path.basename(urlparse(url).path)
+
+    return filename
+
+
+def download_and_extract_tar(
+    parent_folder,
+    download_url,
+    name=None,
+    extension=None
+):
     if name is None:
         cur_time = str(get_current_time()).replace(' ', '_')
         name = f"tmp_tar_{cur_time}"
-    downloaded_tar = os.path.join(parent_folder, f"{name}.tar.gz")
+    if extension is None:
+        original_filename = get_filename_from_url(download_url)
+        if original_filename is not None and "." in original_filename:
+            before, dot, after = original_filename.partition(".")
+            extension = dot +after
+        else:
+            extension = ".tar.gz"
+    downloaded_tar = os.path.join(parent_folder, f"{name}{extension}")
     download_file(downloaded_tar, download_url)
     extract_tar(downloaded_tar, parent_folder)
     remove_file_or_folder(downloaded_tar)
