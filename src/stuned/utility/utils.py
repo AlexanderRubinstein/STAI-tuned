@@ -2121,14 +2121,28 @@ def download_file(file_path, download_url):
             )
 
 
-def extract_tar(tar_path, folder):
+def extract_tar_to_folder(tar_path, folder, verbose=False):
     is_gzip = tar_path.endswith(".tar.gz")
-    tar_flags = "-vx"
+    tar_flags = "-x"
+    if verbose:
+        tar_flags += 'v'
     if is_gzip:
         tar_flags += 'z'
     tar_flags += 'f'
     run_cmd_through_popen(
         f"tar {tar_flags} {tar_path} -C {folder}",
+        logger=None
+    )
+
+
+def create_tar_from_folder(tar_path, folder, verbose=False):
+    assert tar_path.endswith(".tar.gz")
+    tar_flags = "-hcz"
+    if verbose:
+        tar_flags += 'v'
+    tar_flags += 'f'
+    run_cmd_through_popen(
+        f"tar {tar_flags} {tar_path} {folder}",
         logger=None
     )
 
@@ -2173,7 +2187,7 @@ def download_and_extract_tar(
             extension = ".tar.gz"
     downloaded_tar = os.path.join(parent_folder, f"{name}{extension}")
     download_file(downloaded_tar, download_url)
-    extract_tar(downloaded_tar, parent_folder)
+    extract_tar_to_folder(downloaded_tar, parent_folder)
     remove_file_or_folder(downloaded_tar)
 
 

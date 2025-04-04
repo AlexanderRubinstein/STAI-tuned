@@ -25,7 +25,8 @@ from utility.utils import (
     expand_csv,
     retrier_factory,
     is_number,
-    range_for_each_group
+    range_for_each_group,
+    optionally_make_dir
 )
 from utility.configs import (
     AUTOGEN_PREFIX,
@@ -564,6 +565,8 @@ def make_new_config(
 
 
 def replace_placeholders(csv_row, placeholder, new_value):
+    if new_value is None:
+        new_value = "<EMPTY>"
     for column_name, value in csv_row.items():
         if placeholder in str(value):
             csv_row[column_name] = str(value).replace(placeholder, new_value)
@@ -596,8 +599,8 @@ def make_slurm_args_dict(csv_row, exp_name, log_file):
 
     all_slurm_args_dict |= specified_slurm_args
 
-    os.makedirs(os.path.dirname(all_slurm_args_dict["output"]), exist_ok=True)
-    os.makedirs(os.path.dirname(all_slurm_args_dict["error"]), exist_ok=True)
+    optionally_make_dir(all_slurm_args_dict["output"])
+    optionally_make_dir(all_slurm_args_dict["error"])
 
     return all_slurm_args_dict
 
