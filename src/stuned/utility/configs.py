@@ -1,4 +1,5 @@
 import os
+import copy
 
 
 # local modules
@@ -9,7 +10,10 @@ from .utils import (
     get_current_run_folder,
     get_hash,
     apply_func_to_dict_by_nested_key,
-    normalize_path
+    normalize_path,
+    get_leaves_of_nested_dict,
+    get_nested_attr,
+    set_nested_attr
 )
 
 
@@ -123,3 +127,19 @@ def normalize_paths(config, nested_keys, separator='/'):
             key.split(separator),
             normalize_path
         )
+
+
+def prepare_config(config, sep="/"):
+    dict_leaves = get_leaves_of_nested_dict(
+        config,
+        nested_key_prefix=[],
+        include_values=True,
+        allow_empty_dict=True
+    )
+    new_config = copy.deepcopy(config)
+    for leaf_path, leaf_value in dict_leaves:
+        if isinstance(leaf_value, str) and leaf_value[:5] == "copy@":
+            path_to_copy_from = leaf_value.split("@")[-1].split(sep)
+            value_to_copy = get_nested_attr(config, path_to_copy_from)
+            set_nested_attr(new_config, leaf_path, value_to_copy)
+    return new_config

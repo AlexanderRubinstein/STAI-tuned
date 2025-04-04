@@ -1763,6 +1763,9 @@ def fetch_csv(
         assert len(csv_paths) == 1
         csv_path = csv_paths[0]
 
+    if worksheet_name is None:
+        worksheet_name = os.path.basename(csv_path)
+
     return csv_path, spreadsheet_url, worksheet_name, gspread_client
 
 
