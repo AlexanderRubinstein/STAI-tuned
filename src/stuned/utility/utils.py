@@ -48,17 +48,12 @@ EMPTY_CSV_TOKEN = "?"
 DEFAULT_ENV_NAME = os.environ.get("DEFAULT_ENV", None)
 TEST_ENV_NAME = os.environ.get("TEST_ENV", None)
 BASHRC_PATH = os.path.join(
-    os.environ["HOME"],
-    (
-        ".zshrc"
-            if SYSTEM_PLATFORM == "darwin" else
-        ".bashrc"
-    )
+    os.environ["HOME"], (".zshrc" if SYSTEM_PLATFORM == "darwin" else ".bashrc")
 )
 NEW_SHELL_INIT_COMMAND = "source {} && conda activate".format(BASHRC_PATH)
 FLOATING_POINT = "."
 NAME_SEP = "_"
-NAME_NUMBER_SEPARATOR = '-'
+NAME_NUMBER_SEPARATOR = "-"
 NULL_CONTEXT = contextlib.nullcontext()
 PROJECT_ROOT_ENV_NAME = "PROJECT_ROOT_PROVIDED_FOR_STUNED"
 
@@ -71,14 +66,14 @@ MAX_RETRIES_ERROR_MSG = "Maximum number of retries failed."
 DEFAULT_INDENT_IN_JSON = 2
 
 
-LIST_START_SYMBOL = '['
-LIST_END_SYMBOL = ']'
-DELIMETER = ','
-QUOTE_CHAR = '\"'
-ESCAPE_CHAR = '\\'
+LIST_START_SYMBOL = "["
+LIST_END_SYMBOL = "]"
+DELIMETER = ","
+QUOTE_CHAR = '"'
+ESCAPE_CHAR = "\\"
 INF = float("Inf")
 TOL = 1e6
-EXPONENTIAL_SYMBOLS = ('e', 'E')
+EXPONENTIAL_SYMBOLS = ("e", "E")
 
 
 # matplotlib
@@ -93,7 +88,6 @@ ENV_VAR_RE = re.compile(r"<\$([a-zA-Z0-9-_]+)>")
 
 
 class ChildrenForPicklingPreparer:
-
     def _prepare_for_pickling(self):
         for attr_name in object_attributes(self):
             prepare_for_pickling(getattr(self, attr_name))
@@ -104,11 +98,11 @@ class ChildrenForPicklingPreparer:
 
 
 def object_attributes(obj):
-    return filter(lambda a: not a.startswith('__'), dir(obj))
+    return filter(lambda a: not a.startswith("__"), dir(obj))
 
 
 def read_yaml(yaml_file):
-    with open(yaml_file, 'r') as stream:
+    with open(yaml_file, "r") as stream:
         return yaml.safe_load(stream)
 
 
@@ -153,10 +147,7 @@ def append_dict(total_dict, current_dict, allow_new_keys=False):
     for key, value in current_dict.items():
         if isinstance(value, dict):
             if to_create_new_key(
-                is_new_total_dict,
-                allow_new_keys,
-                key,
-                total_dict
+                is_new_total_dict, allow_new_keys, key, total_dict
             ):
                 sub_dict = {}
                 append_dict(sub_dict, value, allow_new_keys=allow_new_keys)
@@ -169,10 +160,7 @@ def append_dict(total_dict, current_dict, allow_new_keys=False):
                 total_dict[key] = sub_dict
         else:
             if to_create_new_key(
-                is_new_total_dict,
-                allow_new_keys,
-                key,
-                total_dict
+                is_new_total_dict, allow_new_keys, key, total_dict
             ):
                 total_dict[key] = [value]
             else:
@@ -187,19 +175,16 @@ def check_element_in_iterable(
     element_name="element",
     iterable_name="iterable",
     reference=None,
-    raise_if_wrong=True
+    raise_if_wrong=True,
 ):
     element_in_iterable = element in iterable
     if raise_if_wrong:
         try:
             assert element_in_iterable
         except Exception as e:
-            exception_msg = "No {} \"{}\" in {}:\n{}".format(
-                    element_name,
-                    element,
-                    iterable_name,
-                    iterable
-                )
+            exception_msg = 'No {} "{}" in {}:\n{}'.format(
+                element_name, element, iterable_name, iterable
+            )
             if reference is not None:
                 exception_msg += "\nFor:\n {}".format(reference)
             raise Exception(exception_msg)
@@ -211,19 +196,14 @@ def check_dict(
     required_keys,
     optional_keys=[],
     check_reverse=False,
-    raise_if_wrong=True
+    raise_if_wrong=True,
 ):
-
     check_1 = False
     check_2 = False
 
     for key in required_keys:
         check_1 = check_element_in_iterable(
-            dict,
-            key,
-            "key",
-            "dict",
-            raise_if_wrong=raise_if_wrong
+            dict, key, "key", "dict", raise_if_wrong=raise_if_wrong
         )
         if not check_1:
             break
@@ -237,7 +217,7 @@ def check_dict(
                     "key",
                     "set of allowed keys",
                     reference=dict,
-                    raise_if_wrong=raise_if_wrong
+                    raise_if_wrong=raise_if_wrong,
                 )
                 if not check_2:
                     break
@@ -247,7 +227,6 @@ def check_dict(
 
 
 def run_cmd_through_popen(cmd_to_run, logger):
-
     def read_out(process, out_type, logger):
         buffer = ""
         if out_type == "stdout":
@@ -260,13 +239,12 @@ def run_cmd_through_popen(cmd_to_run, logger):
 
         while True:
             output = out.readline()
-            if output == '' and process.poll() is not None:
+            if output == "" and process.poll() is not None:
                 break
 
             buffer += output
 
-            if output == '\n' or len(buffer) > MAX_BUFFER_SIZE:
-
+            if output == "\n" or len(buffer) > MAX_BUFFER_SIZE:
                 log_func(buffer, logger)
                 buffer = ""
 
@@ -278,18 +256,16 @@ def run_cmd_through_popen(cmd_to_run, logger):
         shell=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True
+        text=True,
     )
 
     log_or_print(f"Process started by runner has id: {process.pid}", logger)
 
     stdout_thread = threading.Thread(
-        target=read_out,
-        args=(process,"stdout",logger)
+        target=read_out, args=(process, "stdout", logger)
     )
     stderr_thread = threading.Thread(
-        target=read_out,
-        args=(process,"stderr",logger)
+        target=read_out, args=(process, "stderr", logger)
     )
 
     stdout_thread.start()
@@ -308,22 +284,19 @@ def run_cmd_through_popen(cmd_to_run, logger):
 
 
 def runcmd(cmd, verbose=False, logger=None):
-
     try:
         cmd_output = subprocess.check_output(
-            cmd,
-            stderr=subprocess.STDOUT,
-            shell=True
+            cmd, stderr=subprocess.STDOUT, shell=True
         )
         if verbose:
-            msg = cmd_output.decode('utf-8', errors='ignore')
+            msg = cmd_output.decode("utf-8", errors="ignore")
             if msg:
                 if logger:
                     logger.log(msg)
                 else:
                     print(msg)
     except subprocess.CalledProcessError as e:
-        raise Exception(e.output.decode('utf-8', errors='ignore'))
+        raise Exception(e.output.decode("utf-8", errors="ignore"))
 
 
 def compute_dicts_diff(dict1, dict2, ignore_order=True):
@@ -339,16 +312,13 @@ def randomly_subsample_indices_uniformly(total_samples, num_to_subsample):
 
 
 def deterministically_subsample_indices_uniformly(
-    total_samples,
-    num_to_subsample
+    total_samples, num_to_subsample
 ):
-    assert num_to_subsample <= total_samples, \
-        "Try to subsample more samples than exist."
+    assert (
+        num_to_subsample <= total_samples
+    ), "Try to subsample more samples than exist."
     return torch.linspace(
-        0,
-        total_samples - 1,
-        num_to_subsample,
-        dtype=torch.int
+        0, total_samples - 1, num_to_subsample, dtype=torch.int
     )
 
 
@@ -363,7 +333,6 @@ def get_device(use_gpu, idx=0):
 
 
 def get_model_device(model):
-
     # if timm model
     if hasattr(model, "blocks"):
         model = model.blocks
@@ -376,7 +345,7 @@ def get_project_root_path():
     if not PROJECT_ROOT_ENV_NAME in os.environ:
         raise Exception(
             f"STAI-tuned expects project root path "
-            f"in variable \"{PROJECT_ROOT_ENV_NAME}\""
+            f'in variable "{PROJECT_ROOT_ENV_NAME}"'
         )
     return os.environ[PROJECT_ROOT_ENV_NAME]
 
@@ -391,9 +360,7 @@ def get_stuned_root_path():
 
 def make_unique_run_name(hashed_config_diff):
     return "{}---{}---{}".format(
-        get_current_time(),
-        hashed_config_diff,
-        os.getpid()
+        get_current_time(), hashed_config_diff, os.getpid()
     ).replace(" ", "_")
 
 
@@ -402,7 +369,7 @@ def get_current_run_folder(experiment_name, hashed_config_diff):
         get_project_root_path(),
         DEFAULT_EXPERIMENTS_FOLDER,
         experiment_name,
-        make_unique_run_name(hashed_config_diff)
+        make_unique_run_name(hashed_config_diff),
     )
 
 
@@ -421,13 +388,12 @@ def get_value_from_config(file_path, value_name):
             if value_name == line_elements[0]:
                 if len(line_elements) < 2:
                     raise Exception(
-                        "Line \"{}\" does not have value"
-                        " for \"{}\".".format(line, value_name)
+                        'Line "{}" does not have value'
+                        ' for "{}".'.format(line, value_name)
                     )
                 return line_elements[1]
     raise Exception(
-        "File \"{}\" does not contain"
-        " \"{}\".".format(file_path, value_name)
+        'File "{}" does not contain' ' "{}".'.format(file_path, value_name)
     )
 
 
@@ -446,23 +412,19 @@ def error_or_print(msg, logger=None, auto_newline=False):
 
 
 def read_checkpoint(checkpoint_path, map_location=None):
-
     class CPU_Unpickler(pickle.Unpickler):
         def find_class(self, module, name):
-            if module == 'torch.storage' and name == '_load_from_bytes':
-                return lambda b: torch.load(io.BytesIO(b), map_location='cpu')
-            else: return super().find_class(module, name)
+            if module == "torch.storage" and name == "_load_from_bytes":
+                return lambda b: torch.load(io.BytesIO(b), map_location="cpu")
+            else:
+                return super().find_class(module, name)
 
     def do_read_checkpoint(file, map_location=None):
-
-        if map_location == "cpu" or map_location == torch.device(type='cpu'):
+        if map_location == "cpu" or map_location == torch.device(type="cpu"):
             checkpoint = CPU_Unpickler(file).load()
         else:
             try:
-                checkpoint = torch.load(
-                    file,
-                    map_location=map_location
-                )
+                checkpoint = torch.load(file, map_location=map_location)
             except:
                 checkpoint = pickle.load(file)
 
@@ -471,15 +433,9 @@ def read_checkpoint(checkpoint_path, map_location=None):
     if os.path.exists(checkpoint_path):
         file = open(checkpoint_path, "rb")
         try:
-            checkpoint = do_read_checkpoint(
-                file,
-                map_location=map_location
-            )
+            checkpoint = do_read_checkpoint(file, map_location=map_location)
         except RuntimeError:
-            checkpoint = do_read_checkpoint(
-                file,
-                map_location='cpu'
-            )
+            checkpoint = do_read_checkpoint(file, map_location="cpu")
     else:
         raise Exception(
             "Checkpoint path does not exist: {}".format(checkpoint_path)
@@ -490,10 +446,7 @@ def read_checkpoint(checkpoint_path, map_location=None):
 
 
 def save_checkpoint(
-    checkpoint,
-    checkpoint_folder,
-    checkpoint_name=None,
-    logger=None
+    checkpoint, checkpoint_folder, checkpoint_name=None, logger=None
 ):
     if checkpoint_name is None:
         checkpoint_name = make_checkpoint_name(checkpoint)
@@ -506,10 +459,7 @@ def save_checkpoint(
         print(log_msg)
     for obj in checkpoint.values():
         prepare_for_pickling(obj)
-    torch.save(
-        checkpoint,
-        open(checkpoint_savepath, "wb")
-    )
+    torch.save(checkpoint, open(checkpoint_savepath, "wb"))
     for obj in checkpoint.values():
         prepare_for_unpickling(obj)
     return checkpoint_savepath
@@ -539,7 +489,7 @@ def get_leaves_of_nested_dict(
     nested_dict,
     nested_key_prefix=[],
     include_values=False,
-    allow_empty_dict=False
+    allow_empty_dict=False,
 ):
     result = []
     if len(nested_dict) == 0:
@@ -555,7 +505,7 @@ def get_leaves_of_nested_dict(
                     value,
                     nested_key_prefix=current_prefix,
                     include_values=include_values,
-                    allow_empty_dict=allow_empty_dict
+                    allow_empty_dict=allow_empty_dict,
                 )
             )
         else:
@@ -568,47 +518,38 @@ def get_leaves_of_nested_dict(
 
 
 def update_dict_by_nested_key(
-    input_dict,
-    nested_key_as_list,
-    new_value,
-    to_create_new_elements=False
+    input_dict, nested_key_as_list, new_value, to_create_new_elements=False
 ):
     apply_func_to_dict_by_nested_key(
         input_dict,
         nested_key_as_list,
         lambda x: new_value,
-        to_create_new_elements
+        to_create_new_elements,
     )
 
 
 def apply_func_to_dict_by_nested_key(
-    input_dict,
-    nested_key_as_list,
-    func,
-    to_create_new_elements=False
+    input_dict, nested_key_as_list, func, to_create_new_elements=False
 ):
     if not isinstance(input_dict, dict):
         raise Exception(
-            "\"{}\" is expected to be a dict "
+            '"{}" is expected to be a dict '
             "containing the following nested dicts: \n{}".format(
-                input_dict,
-                nested_key_as_list[:-1]
+                input_dict, nested_key_as_list[:-1]
             )
         )
     if not isinstance(nested_key_as_list, list):
         raise Exception(
-            "\"{}\" is expected "
+            '"{}" is expected '
             "to be a list of nested keys for dict: \n{}".format(
-                nested_key_as_list,
-                input_dict
+                nested_key_as_list, input_dict
             )
         )
     if len(nested_key_as_list) == 0:
         raise Exception("Empty nested key was given for dict update.")
     else:
-
         current_key = nested_key_as_list[0]
-        is_leaf = (len(nested_key_as_list) == 1)
+        is_leaf = len(nested_key_as_list) == 1
 
         if not current_key in input_dict:
             if to_create_new_elements:
@@ -619,30 +560,25 @@ def apply_func_to_dict_by_nested_key(
             else:
                 raise Exception(
                     "During recursive dict update {} "
-                    "was not found in {}".format(
-                        current_key,
-                        input_dict
-                    )
+                    "was not found in {}".format(current_key, input_dict)
                 )
 
         if is_leaf:
-            input_dict[current_key] \
-                = func(input_dict[current_key])
+            input_dict[current_key] = func(input_dict[current_key])
         else:
             new_subdict = input_dict[current_key]
             apply_func_to_dict_by_nested_key(
                 new_subdict,
                 nested_key_as_list[1:],
                 func,
-                to_create_new_elements
+                to_create_new_elements,
             )
             input_dict[current_key] = new_subdict
 
 
 def extract_profiler_results(prof):
     return prof.key_averages(group_by_stack_n=PROFILER_GROUP_BY_STACK_N).table(
-        sort_by="self_cuda_memory_usage",
-        row_limit=PROFILER_OUTPUT_ROW_LIMIT
+        sort_by="self_cuda_memory_usage", row_limit=PROFILER_OUTPUT_ROW_LIMIT
     )
 
 
@@ -659,10 +595,7 @@ def move_folder_contents(src_folder, dst_folder):
     for file_or_folder in os.listdir(src_folder):
         dst_path = os.path.join(dst_folder, file_or_folder)
         assert not os.path.exists(dst_path)
-        os.rename(
-            os.path.join(src_folder, file_or_folder),
-            dst_path
-        )
+        os.rename(os.path.join(src_folder, file_or_folder), dst_path)
 
 
 def remove_all_but_subdirs(src_folder, objects_to_keep):
@@ -682,11 +615,7 @@ def remove_file_or_folder(file_or_folder):
     elif os.path.isdir(file_or_folder):
         shutil.rmtree(file_or_folder)
     else:
-        raise_unknown(
-            "file type",
-            "",
-            "for object \"{}\"".format(file_or_folder)
-        )
+        raise_unknown("file type", "", 'for object "{}"'.format(file_or_folder))
 
 
 def is_nested_dict(input_dict):
@@ -704,16 +633,11 @@ def ensure_separator_after_folder(folder_path):
 
 
 def compute_file_hash(
-    filename,
-    chunksize=DEFAULT_FILE_CHUNK_SIZE,
-    hash_type="md5"
+    filename, chunksize=DEFAULT_FILE_CHUNK_SIZE, hash_type="md5"
 ):
     hasher = get_hasher(hash_type)
     with open(filename, "rb") as f:
-        for byte_block in iter(
-            lambda: f.read(chunksize),
-            b""
-        ):
+        for byte_block in iter(lambda: f.read(chunksize), b""):
             hasher.update(byte_block)
     return hasher.hexdigest()
 
@@ -733,7 +657,7 @@ def get_hostname():
 
 def remove_filename_extension(filename, must_have_extension=True):
     if "." in filename:
-        filename = filename[:filename.find(".")]
+        filename = filename[: filename.find(".")]
         assert "." not in filename
     elif must_have_extension:
         raise Exception(
@@ -743,7 +667,6 @@ def remove_filename_extension(filename, must_have_extension=True):
 
 
 def range_for_each_group(num_groups, num_elements):
-
     assert num_elements >= num_groups
 
     indices_per_group = int(num_elements / num_groups)
@@ -751,15 +674,11 @@ def range_for_each_group(num_groups, num_elements):
 
     return [
         (
-            group_id * indices_per_group
-                + (
-                    min(group_id, remainder)
-                ),
+            group_id * indices_per_group + (min(group_id, remainder)),
             (group_id + 1) * (indices_per_group)
-                + (
-                    min(group_id, remainder - 1) + 1
-                )
-        ) for group_id in range(num_groups)
+            + (min(group_id, remainder - 1) + 1),
+        )
+        for group_id in range(num_groups)
     ]
 
 
@@ -785,10 +704,7 @@ def error_callback(exception):
 def deterministic_subset(input_set, num_to_subsample):
     assert num_to_subsample <= len(input_set)
     subsampled_idxs = np.linspace(
-        0,
-        len(input_set) - 1,
-        num_to_subsample,
-        dtype=np.int32
+        0, len(input_set) - 1, num_to_subsample, dtype=np.int32
     )
     res = set()
     set_as_list = sorted(list(input_set))
@@ -798,20 +714,17 @@ def deterministic_subset(input_set, num_to_subsample):
 
 
 def compute_proportion(proportion, total_number):
-    return max(1, int(
-        proportion * total_number
-    ))
+    return max(1, int(proportion * total_number))
 
 
 def make_autogenerated_config_name(input_csv_path, row_number):
     return "[{}]_{}_autogenerated_config.yaml".format(
-        row_number,
-        get_hash(input_csv_path)
+        row_number, get_hash(input_csv_path)
     )
 
 
 def save_as_yaml(output_file_name, data):
-    with open(output_file_name, 'w') as outfile:
+    with open(output_file_name, "w") as outfile:
         yaml.dump(data, outfile, default_flow_style=False)
 
 
@@ -821,9 +734,8 @@ def write_into_csv_pd(
     column_name,
     value,
     use_lock=True,
-    allow_creating_file=False
+    allow_creating_file=False,
 ):
-
     assert row_number > 0, "Rows enumeration starts with 1."
 
     new_file = False
@@ -854,14 +766,11 @@ def write_into_csv_pd(
             empty_rows = pd.DataFrame(
                 {
                     col: [pd.NA for _ in range(num_empty_rows_to_append)]
-                        for col in df.columns
+                    for col in df.columns
                 }
             )
 
-            df = pd.concat(
-                [df, empty_rows],
-                ignore_index=True
-            )
+            df = pd.concat([df, empty_rows], ignore_index=True)
 
         df.at[row_number, column_name] = value
 
@@ -880,7 +789,7 @@ def write_into_csv_with_column_names(
     doublequote=True,
     replace_nulls=False,
     append_row=False,
-    use_lock=True
+    use_lock=True,
 ):
     """
     Insert <value> into the intersection of row number <row_number>
@@ -910,24 +819,23 @@ def write_into_csv_with_column_names(
         other args
     """
 
-    tempfile = NamedTemporaryFile('w+t', newline='', delete=False)
+    tempfile = NamedTemporaryFile("w+t", newline="", delete=False)
 
     lock = make_file_lock(file_path) if use_lock else NULL_CONTEXT
 
     with lock:
-
-        with open(file_path, 'r', newline='') as csv_file, tempfile:
-
+        with open(file_path, "r", newline="") as csv_file, tempfile:
             reader = csv.reader(
                 (
-                    (x.replace('\0', '') for x in csv_file)
-                        if replace_nulls else csv_file
+                    (x.replace("\0", "") for x in csv_file)
+                    if replace_nulls
+                    else csv_file
                 ),
                 delimiter=delimiter,
                 quotechar=quotechar,
                 quoting=quoting,
                 escapechar=escapechar,
-                doublequote=doublequote
+                doublequote=doublequote,
             )
             writer = csv.writer(
                 tempfile,
@@ -935,7 +843,7 @@ def write_into_csv_with_column_names(
                 quotechar=quotechar,
                 quoting=quoting,
                 escapechar=escapechar,
-                doublequote=doublequote
+                doublequote=doublequote,
             )
 
             appended_column = False
@@ -947,12 +855,10 @@ def write_into_csv_with_column_names(
             pos_in_row = None
 
             if num_rows == 0:
-
-                assert row_number == 1, \
-                    (
-                        "Can't insert into row number {} of empty file, "
-                        "only row number 1 is possible."
-                    ).format(row_number)
+                assert row_number == 1, (
+                    "Can't insert into row number {} of empty file, "
+                    "only row number 1 is possible."
+                ).format(row_number)
 
                 writer.writerow([column_name])
                 append_row = True
@@ -961,7 +867,6 @@ def write_into_csv_with_column_names(
 
             else:
                 for current_row_number, row in enumerate(reader):
-
                     if current_row_number == 0:
                         if column_name in row:
                             pos_in_row = row.index(column_name)
@@ -975,12 +880,11 @@ def write_into_csv_with_column_names(
                         if appended_column and row_number > 0:
                             row.append(value)
                         else:
-                            assert len(row) > pos_in_row, \
-                                "CSV's contents are inconsistent " \
-                                "with the number of columns " \
-                                "for the file {}".format(
-                                    file_path
-                                )
+                            assert len(row) > pos_in_row, (
+                                "CSV's contents are inconsistent "
+                                "with the number of columns "
+                                "for the file {}".format(file_path)
+                            )
                             row[pos_in_row] = value
                         value_inserted = True
                     elif appended_column and current_row_number > 0:
@@ -990,7 +894,6 @@ def write_into_csv_with_column_names(
                     num_cols = len(row)
 
             if append_row:
-
                 assert num_cols is not None and num_cols > 0
 
                 assert row_number == num_rows
@@ -1002,9 +905,7 @@ def write_into_csv_with_column_names(
             raise Exception(
                 "CSV file {} has {} rows, while insertion "
                 "into row {} was requested!".format(
-                    file_path,
-                    num_rows,
-                    row_number
+                    file_path, num_rows, row_number
                 )
             )
 
@@ -1012,7 +913,6 @@ def write_into_csv_with_column_names(
 
 
 def count_rows_in_file(file):
-
     rowcount = 0
 
     for _ in file:
@@ -1024,7 +924,6 @@ def count_rows_in_file(file):
 
 
 def remove_elements_from_the_end(sequence, element_to_remove):
-
     assert len(sequence)
 
     end_pos = len(sequence) - 1
@@ -1032,7 +931,7 @@ def remove_elements_from_the_end(sequence, element_to_remove):
     while end_pos >= 0 and sequence[end_pos] == element_to_remove:
         end_pos -= 1
 
-    return sequence[:end_pos + 1]
+    return sequence[: end_pos + 1]
 
 
 def itself_and_lower_upper_case(word):
@@ -1040,24 +939,15 @@ def itself_and_lower_upper_case(word):
 
 
 def decode_strings_in_dict(
-    input_dict,
-    list_separators,
-    list_start_symbol,
-    list_end_symbol
+    input_dict, list_separators, list_start_symbol, list_end_symbol
 ):
-
     for key, value in input_dict.items():
-
         if isinstance(value, str):
-
             if value == "":
                 continue
 
             value = decode_val_from_str(
-                value,
-                list_separators,
-                list_start_symbol,
-                list_end_symbol
+                value, list_separators, list_start_symbol, list_end_symbol
             )
 
             input_dict[key] = value
@@ -1065,40 +955,33 @@ def decode_strings_in_dict(
 
 def decode_val_from_str(
     value,
-    list_separators=[' ', ', ', ','],
-    list_start_symbol='[',
-    list_end_symbol=']'
+    list_separators=[" ", ", ", ","],
+    list_start_symbol="[",
+    list_end_symbol="]",
 ):
-
     if isinstance(value, str):
         value = value.strip()
 
     if str_is_number(value):
-
         value = parse_float_or_int_from_string(value)
 
-    elif (
-        len(value) > 1
-            and (value[0] == list_start_symbol
-            or value[-1] == list_end_symbol)
+    elif len(value) > 1 and (
+        value[0] == list_start_symbol or value[-1] == list_end_symbol
     ):
-
         assert (
-            value[0] == list_start_symbol
-                and value[-1] == list_end_symbol
+            value[0] == list_start_symbol and value[-1] == list_end_symbol
         ), f"Possibly incomplete list expression: {value}"
 
         value = parse_list_from_string(
             value,
             list_separators=list_separators,
             list_start_symbol=list_start_symbol,
-            list_end_symbol=list_end_symbol
+            list_end_symbol=list_end_symbol,
         )
 
-    elif (
-        value in itself_and_lower_upper_case("None")
-            or value in itself_and_lower_upper_case("Null")
-    ):
+    elif value in itself_and_lower_upper_case(
+        "None"
+    ) or value in itself_and_lower_upper_case("Null"):
         value = None
 
     elif value in itself_and_lower_upper_case("False"):
@@ -1110,27 +993,18 @@ def decode_val_from_str(
     return value
 
 
-def replace_many_by_one(
-    input_string,
-    items_to_replace,
-    value_to_insert
-):
+def replace_many_by_one(input_string, items_to_replace, value_to_insert):
     # TODO(Alex | 25.02.2023) do in O(n) with regex
     for item_to_replace in items_to_replace:
-
         if item_to_replace == value_to_insert:
             continue
 
-        input_string = input_string.replace(
-            item_to_replace,
-            value_to_insert
-        )
+        input_string = input_string.replace(item_to_replace, value_to_insert)
 
     return input_string
 
 
 def str_is_number(input_str):
-
     if len(input_str) == 0:
         return False
 
@@ -1139,17 +1013,15 @@ def str_is_number(input_str):
     for i in range(len(input_str)):
         if input_str[i].isdigit():
             continue
-        if input_str[i] == '-':
+        if input_str[i] == "-":
             if i == 0:
                 continue
             elif exponential and input_str[i - 1] in EXPONENTIAL_SYMBOLS:
                 continue
         if (
-                input_str[i] == '+'
-            and
-                exponential
-            and
-                input_str[i - 1] in EXPONENTIAL_SYMBOLS
+            input_str[i] == "+"
+            and exponential
+            and input_str[i - 1] in EXPONENTIAL_SYMBOLS
         ):
             continue
         if input_str[i] in EXPONENTIAL_SYMBOLS and not exponential:
@@ -1167,10 +1039,8 @@ def str_is_number(input_str):
 
 
 def parse_float_or_int_from_string(value_as_str):
-    if (
-            FLOATING_POINT in value_as_str
-        or
-            any([exp in value_as_str for exp in EXPONENTIAL_SYMBOLS])
+    if FLOATING_POINT in value_as_str or any(
+        [exp in value_as_str for exp in EXPONENTIAL_SYMBOLS]
     ):
         return float(value_as_str)
     else:
@@ -1185,43 +1055,36 @@ def parse_list_from_string(
     value_as_str,
     list_separators,
     list_start_symbol=LIST_START_SYMBOL,
-    list_end_symbol=LIST_END_SYMBOL
+    list_end_symbol=LIST_END_SYMBOL,
 ):
-
     assert len(list_separators)
     assert len(value_as_str) > 1
     assert (
         value_as_str[0] == list_start_symbol
-            and value_as_str[-1] == list_end_symbol
+        and value_as_str[-1] == list_end_symbol
     )
 
     if len(value_as_str) == 2:
         return []
     else:
-
         value_as_str = value_as_str[1:-1]
 
-        replace_many_by_one(
-            value_as_str,
-            list_separators,
-            list_separators[0]
-        )
+        replace_many_by_one(value_as_str, list_separators, list_separators[0])
 
         value_as_str = re.sub(
             f"({escape_all_chars_in_string(list_separators[0])})+",
             list_separators[0],
-            value_as_str
+            value_as_str,
         )
 
         result_list = value_as_str.split(list_separators[0])
 
         for i in range(len(result_list)):
-
             result_list[i] = decode_val_from_str(
                 result_list[i],
                 list_separators,
                 list_start_symbol,
-                list_end_symbol
+                list_end_symbol,
             )
 
         return result_list
@@ -1233,19 +1096,18 @@ def read_csv_as_dict(
     quotechar=QUOTE_CHAR,
     quoting=csv.QUOTE_NONE,
     escapechar=ESCAPE_CHAR,
-    doublequote=True
+    doublequote=True,
 ):
-
     result = {}
 
-    with open(csv_path, newline='') as input_csv:
+    with open(csv_path, newline="") as input_csv:
         csv_reader = csv.DictReader(
             input_csv,
             delimiter=delimeter,
             quotechar=quotechar,
             quoting=quoting,
             escapechar=escapechar,
-            doublequote=doublequote
+            doublequote=doublequote,
         )
 
         result[0] = {}
@@ -1261,10 +1123,7 @@ def read_csv_as_dict(
     return result
 
 
-def read_csv_as_dict_pd(
-    csv_path
-):
-
+def read_csv_as_dict_pd(csv_path):
     result = pd.read_csv(csv_path)
     cols_row = pd.DataFrame({col: [col] for col in result.columns})
     result = pd.concat([cols_row, result]).reset_index().transpose()
@@ -1274,16 +1133,16 @@ def read_csv_as_dict_pd(
 
 
 def normalize_string_path(path, current_dir):
-
     if current_dir is None:
         current_dir = get_project_root_path()
     path = os.path.expanduser(path)
-    if path[0] == '.':
+    if path[0] == ".":
         path = os.path.join(current_dir, path)
     env_vars = ENV_VAR_RE.findall(path)
     for env_var in env_vars:
-        assert env_var in os.environ, \
-            f"Environment variable {env_var} is not set."
+        assert (
+            env_var in os.environ
+        ), f"Environment variable {env_var} is not set."
         path = path.replace(f"<${env_var}>", os.environ[env_var])
 
     return os.path.abspath(path)
@@ -1303,7 +1162,7 @@ def normalize_path(path, current_dir=None):
 
 
 def read_json(json_path):
-    with open(json_path, 'r') as f:
+    with open(json_path, "r") as f:
         json_contents = json.load(f)
         return json_contents
 
@@ -1317,13 +1176,13 @@ def is_number(x):
 
 
 def assert_two_values_are_close(value_1, value_2, **isclose_kwargs):
-
     def assert_info(value_1, value_2):
         return "value 1: {}\n\nvalue 2: {}".format(value_1, value_2)
 
     def assert_is_close(value_1, value_2, isclose_func, **isclose_kwargs):
-        assert isclose_func(value_1, value_2, **isclose_kwargs).all(), \
-            assert_info(value_1, value_2)
+        assert isclose_func(
+            value_1, value_2, **isclose_kwargs
+        ).all(), assert_info(value_1, value_2)
 
     if value_1 is None:
         assert value_2 is None
@@ -1331,23 +1190,22 @@ def assert_two_values_are_close(value_1, value_2, **isclose_kwargs):
     if not (is_number(value_1) and is_number(value_2)):
         value_1_type = type(value_1)
         value_2_type = type(value_2)
-        assert value_1_type == value_2_type, \
-            assert_info(value_1_type, value_2_type)
+        assert value_1_type == value_2_type, assert_info(
+            value_1_type, value_2_type
+        )
 
     if isinstance(value_1, (list, tuple, dict)):
         assert len(value_1) == len(value_2), assert_info(value_1, value_2)
         if isinstance(value_1, dict):
             iterable = zip(
                 sorted(value_1.items(), key=(lambda x: x[0])),
-                sorted(value_2.items(), key=(lambda x: x[0]))
+                sorted(value_2.items(), key=(lambda x: x[0])),
             )
         else:
             iterable = zip(value_1, value_2)
         for subvalue_1, subvalue_2 in iterable:
             assert_two_values_are_close(
-                subvalue_1,
-                subvalue_2,
-                **isclose_kwargs
+                subvalue_1, subvalue_2, **isclose_kwargs
             )
     elif isinstance(value_1, np.ndarray):
         assert_is_close(value_1, value_2, np.isclose, **isclose_kwargs)
@@ -1391,10 +1249,7 @@ def bootstrap_by_key_subname(input_dict, subname_to_bootstrap):
 
 
 def find_by_subkey(
-    iterable,
-    subkey,
-    assert_found=False,
-    only_first_occurence=True
+    iterable, subkey, assert_found=False, only_first_occurence=True
 ):
     result = []
     for key in iterable:
@@ -1408,8 +1263,9 @@ def find_by_subkey(
         return result
 
     if assert_found:
-        assert False, \
-            "Key with subkey {} wasn't found in {}.".format(subkey, iterable)
+        assert False, "Key with subkey {} wasn't found in {}.".format(
+            subkey, iterable
+        )
 
     return None
 
@@ -1419,7 +1275,6 @@ def get_system_root_path():
 
 
 def prepare_factory_without_args(func, **kwargs):
-
     def factory_without_args():
         return func(**kwargs)
 
@@ -1436,22 +1291,20 @@ def retrier_factory(
     final_func=raise_func,
     max_retries=DEFAULT_NUM_ATTEMTPS,
     sleep_time=DEFAULT_SLEEP_TIME,
-    infer_logger_from_args=None
+    infer_logger_from_args=None,
 ):
-
     assert (
-            logger != "auto" and infer_logger_from_args is None
-        or
-            logger == "auto" and infer_logger_from_args is not None
-    ), "Provide \"infer_logger_from_args\" iff \"logger == auto\""
+        logger != "auto"
+        and infer_logger_from_args is None
+        or logger == "auto"
+        and infer_logger_from_args is not None
+    ), 'Provide "infer_logger_from_args" iff "logger == auto"'
 
     def retrier(func):
-
         # without this line logger is not seen in wrapped_func
         logger_in_retrier = logger
 
         def wrapped_func(*args, **kwargs):
-
             logger = logger_in_retrier
 
             if logger == "auto":
@@ -1474,13 +1327,10 @@ def retrier_factory(
                         traceback.format_exc(),
                         func.__name__,
                         num_attempts,
-                        max_retries
+                        max_retries,
                     )
                     try:
-                        error_or_print(
-                            retrying_msg,
-                            logger
-                        )
+                        error_or_print(retrying_msg, logger)
                     except:
                         print(retrying_msg)
                     if retry_print is not None:
@@ -1502,16 +1352,13 @@ class SetEncoder(json.JSONEncoder):
 # from: https://www.tensorflow.org/tensorboard/text_summaries
 def pretty_json(hp, cls=SetEncoder, default=str):
     json_hp = json.dumps(
-        hp,
-        indent=DEFAULT_INDENT_IN_JSON,
-        cls=cls,
-        default=default
+        hp, indent=DEFAULT_INDENT_IN_JSON, cls=cls, default=default
     )
     return "".join("\t" + line for line in json_hp.splitlines(True))
 
 
 def touch_file(file_path):
-    open(file_path, 'a').close()
+    open(file_path, "a").close()
     return file_path
 
 
@@ -1524,10 +1371,7 @@ def cat_or_assign(accumulating_tensor, new_tensor):
 def kill_processes(processes_to_kill, logger=None):
     for process_to_kill in processes_to_kill:
         try:
-            os.kill(
-                process_to_kill,
-                signal.SIGTERM
-            )
+            os.kill(process_to_kill, signal.SIGTERM)
         except Exception:
             error_or_print(traceback.format_exc(), logger)
 
@@ -1535,7 +1379,7 @@ def kill_processes(processes_to_kill, logger=None):
 def read_old_checkpoint(checkpoint_path, map_location=None):
     sys.path.insert(
         0,
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "train_eval")
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "train_eval"),
     )
     checkpoint = read_checkpoint(checkpoint_path, map_location=map_location)
     sys.path.pop(0)
@@ -1552,7 +1396,6 @@ def make_file_lock(file_name):
 
 
 def check_duplicates(input_list):
-
     counter_dict = dict(Counter(input_list))
     duplicate_dict = {
         key: value for key, value in counter_dict.items() if value > 1
@@ -1594,12 +1437,8 @@ def has_nested_attr(object, nested_attr):
     if len(nested_attr) == 1:
         return hasattr(object, nested_attr[0])
     else:
-        return (
-            hasattr(object, nested_attr[0])
-                and has_nested_attr(
-                    getattr(object, nested_attr[0]),
-                    nested_attr[1:]
-                )
+        return hasattr(object, nested_attr[0]) and has_nested_attr(
+            getattr(object, nested_attr[0]), nested_attr[1:]
         )
 
 
@@ -1610,9 +1449,7 @@ def get_nested_attr(object, nested_attr):
     if len(nested_attr) == 1:
         return getattr(object, nested_attr[0])
     else:
-        return (
-            get_nested_attr(getattr(object, nested_attr[0]), nested_attr[1:])
-        )
+        return get_nested_attr(getattr(object, nested_attr[0]), nested_attr[1:])
 
 
 def set_nested_attr(object, nested_attr, value):
@@ -1623,11 +1460,12 @@ def set_nested_attr(object, nested_attr, value):
         if len(nested_attr) == 1:
             return setattr(object, nested_attr[0], value)
         else:
-            set_nested_attr(getattr(object, nested_attr[0]), nested_attr[1:], value)
+            set_nested_attr(
+                getattr(object, nested_attr[0]), nested_attr[1:], value
+            )
 
 
 def write_csv_dict_to_csv(dict_from_csv, csv_file, **kwargs):
-
     if os.path.exists(csv_file):
         remove_file_or_folder(csv_file)
 
@@ -1643,12 +1481,11 @@ def write_csv_dict_to_csv(dict_from_csv, csv_file, **kwargs):
                 column_name,
                 value,
                 append_row=(i == 0),
-                **kwargs
+                **kwargs,
             )
 
 
 def write_csv_dict_to_csv_pd(dict_from_csv, csv_file):
-
     df = pd.DataFrame.from_dict(dict_from_csv, orient="index")
     df = df.iloc[1:]
     df.to_csv(csv_file, index=False)
@@ -1657,14 +1494,13 @@ def write_csv_dict_to_csv_pd(dict_from_csv, csv_file):
 def expand_csv(
     csv_to_expand,
     expanded_csv,
-    expansion_start_symbol='{',
-    expansion_end_symbol='}',
+    expansion_start_symbol="{",
+    expansion_end_symbol="}",
     expansion_delimeter=" | ",
-    range_start_symbol='<',
-    range_end_symbol='>',
-    range_delimeter=' '
+    range_start_symbol="<",
+    range_end_symbol=">",
+    range_delimeter=" ",
 ):
-
     def expand_row(
         row_as_dict,
         expansion_start_symbol,
@@ -1672,15 +1508,15 @@ def expand_csv(
         expansion_delimeter,
         range_start_symbol,
         range_end_symbol,
-        range_delimeter
+        range_delimeter,
     ):
-
         def build_range(range_as_str, range_delimeter):
             range_as_str_split = range_as_str.split(range_delimeter)
             assert len(range_as_str_split) == 4
             for i in range(len(range_as_str_split)):
-                range_as_str_split[i] \
-                    = decode_val_from_str(range_as_str_split[i])
+                range_as_str_split[i] = decode_val_from_str(
+                    range_as_str_split[i]
+                )
 
             start = range_as_str_split[0]
             end = range_as_str_split[1]
@@ -1688,11 +1524,11 @@ def expand_csv(
             log_scale = range_as_str_split[3]
             result = []
 
-            assert step > 1 if log_scale else step > 0, \
-                "Range should be increasing"
+            assert (
+                step > 1 if log_scale else step > 0
+            ), "Range should be increasing"
 
             while start < end:
-
                 result.append(start)
 
                 if log_scale:
@@ -1709,9 +1545,9 @@ def expand_csv(
                 value = value.strip()
             if (
                 isinstance(value, str)
-                    and len(value) >= 2
-                    and value[0] == expansion_start_symbol
-                    and value[-1] == expansion_end_symbol
+                and len(value) >= 2
+                and value[0] == expansion_start_symbol
+                and value[-1] == expansion_end_symbol
             ):
                 if (
                     len(value) >= 4
@@ -1719,24 +1555,23 @@ def expand_csv(
                     and value[-2] == range_end_symbol
                 ):
                     assert len(value) > 4, "Empty range expression"
-                    assert range_delimeter in value, \
-                        f"Range expression without range delimeter {value}"
+                    assert (
+                        range_delimeter in value
+                    ), f"Range expression without range delimeter {value}"
                     value = (
                         expansion_start_symbol
-                            + expansion_delimeter.join(
-                                str(el) for el in build_range(
-                                    value[2:-2],
-                                    range_delimeter
-                                )
-                            )
-                            + expansion_end_symbol
+                        + expansion_delimeter.join(
+                            str(el)
+                            for el in build_range(value[2:-2], range_delimeter)
+                        )
+                        + expansion_end_symbol
                     )
 
                 row_as_dict[key] = parse_list_from_string(
                     value,
                     [expansion_delimeter],
                     list_start_symbol=expansion_start_symbol,
-                    list_end_symbol=expansion_end_symbol
+                    list_end_symbol=expansion_end_symbol,
                 )
             else:
                 row_as_dict[key] = [value]
@@ -1754,7 +1589,6 @@ def expand_csv(
     final_row_id = 0
 
     for row_as_dict in dict_to_expand.values():
-
         expanded_rows = expand_row(
             row_as_dict,
             expansion_start_symbol=expansion_start_symbol,
@@ -1762,7 +1596,7 @@ def expand_csv(
             expansion_delimeter=expansion_delimeter,
             range_start_symbol=range_start_symbol,
             range_end_symbol=range_end_symbol,
-            range_delimeter=range_delimeter
+            range_delimeter=range_delimeter,
         )
         for row in expanded_rows:
             expanded_dict[final_row_id] = row
@@ -1780,7 +1614,6 @@ def instantiate_from_config(config, object_key_in_config, make_func, logger):
 
 
 class TimeStampEventHandler(FileSystemEventHandler):
-
     def __init__(self):
         super(TimeStampEventHandler, self).__init__()
         self.update_time()
@@ -1836,54 +1669,35 @@ def folder_still_has_updates(path, delta, max_time, check_time=None):
 
 
 def as_str_for_csv(value, chars_to_remove=[]):
-
     if value is None:
         value = "None"
     value = str(value)
 
     for char in chars_to_remove:
-        value = value.replace(char, '')
+        value = value.replace(char, "")
 
     return value
 
 
 def check_consistency(
-    first,
-    second,
-    first_consistent_group,
-    second_consistent_group
+    first, second, first_consistent_group, second_consistent_group
 ):
     def make_msg(
-        first,
-        first_consistent_group,
-        second,
-        second_consistent_group
+        first, first_consistent_group, second, second_consistent_group
     ):
-        return (
-            "{} is from {}, therefore {} "
-            "should be from {}."
-        ).format(
-            first,
-            first_consistent_group,
-            second,
-            second_consistent_group
+        return ("{} is from {}, therefore {} " "should be from {}.").format(
+            first, first_consistent_group, second, second_consistent_group
         )
 
     try:
         if first in first_consistent_group:
             exception_msg = make_msg(
-                first,
-                first_consistent_group,
-                second,
-                second_consistent_group
+                first, first_consistent_group, second, second_consistent_group
             )
             assert second in second_consistent_group
         if second in second_consistent_group:
             exception_msg = make_msg(
-                second,
-                second_consistent_group,
-                first,
-                first_consistent_group
+                second, second_consistent_group, first, first_consistent_group
             )
             assert first in first_consistent_group
     except AssertionError as e:
@@ -1891,15 +1705,10 @@ def check_consistency(
 
 
 def aggregate_tensors_by_func(input_list, func=torch.mean):
-    return func(
-        torch.stack(
-            input_list
-        )
-    )
+    return func(torch.stack(input_list))
 
 
 def func_for_dim(func, dim):
-
     def inner_func(*args, **kwargs):
         return func(*args, **kwargs, dim=dim)
 
@@ -1915,7 +1724,6 @@ def parse_name_and_number(name_and_number, separator=NAME_NUMBER_SEPARATOR):
 
 
 def show_images(images, label_lists=None):
-
     def remove_ticks_and_labels(subplot):
         subplot.axes.xaxis.set_ticklabels([])
         subplot.axes.yaxis.set_ticklabels([])
@@ -1941,10 +1749,10 @@ def show_images(images, label_lists=None):
     fig = plt.figure(figsize=(n_cols * PLT_COL_SIZE, n_rows * PLT_ROW_SIZE))
     for i in range(n):
         subplot = fig.add_subplot(n_rows, n_cols, i + 1)
-        title = f'n{i}'
+        title = f"n{i}"
         if label_lists is not None:
             for label_name, label_list in label_lists.items():
-                title += f"\n{label_name}=\"{label_list[i]}\""
+                title += f'\n{label_name}="{label_list[i]}"'
         subplot.title.set_text(title)
         remove_ticks_and_labels(subplot)
 
@@ -1981,7 +1789,9 @@ def compute_tensor_cumsums(tensor):
 
 
 def compute_unique_tensor_value(tensor):
-    return torch.round(TOL * aggregate_tensors_by_func(compute_tensor_cumsums(tensor)))
+    return torch.round(
+        TOL * aggregate_tensors_by_func(compute_tensor_cumsums(tensor))
+    )
 
 
 def prune_list(l, value):
@@ -1989,7 +1799,6 @@ def prune_list(l, value):
 
 
 def get_with_assert(container, key, error_msg=None):
-
     if isinstance(key, list):
         assert len(key) > 0
         next_key = key[0]
@@ -2000,16 +1809,13 @@ def get_with_assert(container, key, error_msg=None):
         else:
             return get_with_assert(next_container, rest_key, error_msg)
     else:
-        key_in_container = (key in container)
+        key_in_container = key in container
 
         if not key_in_container:
-
             if error_msg is None:
-                error_msg = f"Key \"{key}\" not in container: {container}"
+                error_msg = f'Key "{key}" not in container: {container}'
 
-            raise Exception(
-                error_msg
-            )
+            raise Exception(error_msg)
 
         return container[key]
 
@@ -2021,25 +1827,19 @@ def properties_diff(first_object, second_object, only_local=True):
     else:
         first_object_properties = dir(first_object)
         second_object_properties = dir(second_object)
-    return (
-        set(first_object_properties).difference(
-            set(second_object_properties)
-        )
+    return set(first_object_properties).difference(
+        set(second_object_properties)
     )
 
 
 def get_even_from_wrapped(giver, wrappable_as_property, property_to_get):
-
     if hasattr(giver, property_to_get):
-        return getattr(
-            giver,
-            property_to_get
-        )
+        return getattr(giver, property_to_get)
     elif hasattr(giver, wrappable_as_property):
         return get_even_from_wrapped(
             getattr(giver, wrappable_as_property),
             wrappable_as_property,
-            property_to_get
+            property_to_get,
         )
     return None
 
@@ -2047,11 +1847,7 @@ def get_even_from_wrapped(giver, wrappable_as_property, property_to_get):
 def add_custom_properties(giver, taker, only_local=True):
     custom_properties = properties_diff(giver, taker, only_local=only_local)
     for custom_property in custom_properties:
-        setattr(
-            taker,
-            custom_property,
-            getattr(giver, custom_property)
-        )
+        setattr(taker, custom_property, getattr(giver, custom_property))
 
 
 def invert_dict(d, none_to_string=False):
@@ -2070,19 +1866,18 @@ def load_from_pickle(path):
     return pickle.load(open(path, "rb"))
 
 
-def extract_list_from_huge_string(huge_string, separator='\n'):
+def extract_list_from_huge_string(huge_string, separator="\n"):
     assert isinstance(huge_string, str)
     split = huge_string.split(separator)
     res = []
     for el in split:
         el = el.strip()
-        if el != '':
+        if el != "":
             res.append(el)
     return res
 
 
 def apply_pairwise(iterable, func):
-
     if len(iterable) == 1:
         return iterable
 
@@ -2103,21 +1898,21 @@ def download_file(file_path, download_url):
 
         if download_type == "wget":
             run_cmd_through_popen(
-                f"wget {download_url} -O {file_path}",
-                logger=None
+                f"wget {download_url} -O {file_path}", logger=None
             )
         else:
             assert download_type == "gdrive"
-            assert "uc?id=" in download_url, \
-                "When using gdown, url should be of form: " \
+            assert "uc?id=" in download_url, (
+                "When using gdown, url should be of form: "
                 "https://drive.google.com/uc?id=<file_id>"
+            )
 
             gdown.download(
                 download_url,
                 file_path,
                 quiet=False,
                 use_cookies=False,
-                fuzzy=True
+                fuzzy=True,
             )
 
 
@@ -2125,13 +1920,12 @@ def extract_tar_to_folder(tar_path, folder, verbose=False):
     is_gzip = tar_path.endswith(".tar.gz")
     tar_flags = "-x"
     if verbose:
-        tar_flags += 'v'
+        tar_flags += "v"
     if is_gzip:
-        tar_flags += 'z'
-    tar_flags += 'f'
+        tar_flags += "z"
+    tar_flags += "f"
     run_cmd_through_popen(
-        f"tar {tar_flags} {tar_path} -C {folder}",
-        logger=None
+        f"tar {tar_flags} {tar_path} -C {folder}", logger=None
     )
 
 
@@ -2139,26 +1933,24 @@ def create_tar_from_folder(tar_path, folder, verbose=False):
     assert tar_path.endswith(".tar.gz")
     tar_flags = "-hcz"
     if verbose:
-        tar_flags += 'v'
-    tar_flags += 'f'
-    run_cmd_through_popen(
-        f"tar {tar_flags} {tar_path} {folder}",
-        logger=None
-    )
+        tar_flags += "v"
+    tar_flags += "f"
+    run_cmd_through_popen(f"tar {tar_flags} {tar_path} {folder}", logger=None)
 
 
 def get_filename_from_url(url):
-
     filename = None
 
     # Method 1: Try to get from Content-Disposition header
     try:
         response = requests.head(url)
-        if 'Content-Disposition' in response.headers:
+        if "Content-Disposition" in response.headers:
             # Look for filename in header
-            content_disposition = response.headers['Content-Disposition']
-            if 'filename=' in content_disposition:
-                filename = content_disposition.split('filename=')[1].strip('"\'')
+            content_disposition = response.headers["Content-Disposition"]
+            if "filename=" in content_disposition:
+                filename = content_disposition.split("filename=")[1].strip(
+                    "\"'"
+                )
     except:
         pass
 
@@ -2170,19 +1962,16 @@ def get_filename_from_url(url):
 
 
 def download_and_extract_tar(
-    parent_folder,
-    download_url,
-    name=None,
-    extension=None
+    parent_folder, download_url, name=None, extension=None
 ):
     if name is None:
-        cur_time = str(get_current_time()).replace(' ', '_')
+        cur_time = str(get_current_time()).replace(" ", "_")
         name = f"tmp_tar_{cur_time}"
     if extension is None:
         original_filename = get_filename_from_url(download_url)
         if original_filename is not None and "." in original_filename:
             before, dot, after = original_filename.partition(".")
-            extension = dot +after
+            extension = dot + after
         else:
             extension = ".tar.gz"
     downloaded_tar = os.path.join(parent_folder, f"{name}{extension}")
