@@ -1,8 +1,5 @@
 import os
-from torch.utils.data import (
-    DataLoader,
-    SubsetRandomSampler
-)
+from torch.utils.data import DataLoader, SubsetRandomSampler
 import shutil
 import gdown
 import requests
@@ -12,15 +9,11 @@ import traceback
 import sys
 import os
 import torch
-from typing import (
-    Union,
-    Dict,
-    List,
-    Callable
-)
+from typing import Union, Dict, List, Callable
 from collections import UserDict
 import warnings
 import gc
+import numpy as np
 
 
 # local modules
@@ -45,12 +38,10 @@ from utility.utils import (
     add_custom_properties,
     raise_unknown,
     get_with_assert,
-    load_from_pickle
+    load_from_pickle,
 )
-from utility.imports import (
-    FROM_CLASS_KEY,
-    make_from_class_ctor
-)
+from utility.imports import FROM_CLASS_KEY, make_from_class_ctor
+
 sys.path.pop(0)
 
 
@@ -58,8 +49,10 @@ CHECK_FILE_HASH = False
 
 
 EMPTY_URL = "¯\_(ツ)_/¯"
-YANDEX_API_ENDPOINT = "https://cloud-api.yandex.net/v1/disk" \
+YANDEX_API_ENDPOINT = (
+    "https://cloud-api.yandex.net/v1/disk"
     + "/public/resources/download?public_key={}"
+)
 
 
 H5_EXTENSION = ".h5"
@@ -76,7 +69,6 @@ FINGERPRINT_ATTR = "_object_fingerprint_for_reading_from_cache"
 
 
 class DatasetWrapperWithTransforms(torch.utils.data.Dataset):
-
     def __init__(self, dataset, transform):
         assert isinstance(transform, Callable)
         self.inner_dataset = dataset
@@ -108,75 +100,55 @@ def fetch_data(
     assert_folder_func,
     do_fetch_data_func,
     logger=None,
-    dataset_path_is_folder=True
+    dataset_path_is_folder=True,
 ):
     """
     Makes sure that dataset is under the <dataset_path> path
     """
     dataset_name = remove_filename_extension(
-        os.path.basename(dataset_path),
-        must_have_extension=False
+        os.path.basename(dataset_path), must_have_extension=False
     )
     log_or_print(
-        "Verifying \"{}\" dataset..".format(dataset_name),
+        'Verifying "{}" dataset..'.format(dataset_name),
         logger=logger,
-        auto_newline=True
+        auto_newline=True,
     )
     if not assert_folder_func(dataset_path):
         log_or_print(
-            "Could not verify \"{}\" dataset in {}".format(
-                dataset_name,
-                dataset_path
+            'Could not verify "{}" dataset in {}'.format(
+                dataset_name, dataset_path
             ),
             logger=logger,
-            auto_newline=True
+            auto_newline=True,
         )
         if os.path.exists(dataset_path):
-            object_type \
-                = "folder" \
-                    if dataset_path_is_folder \
-                    else "file"
+            object_type = "folder" if dataset_path_is_folder else "file"
             log_or_print(
-                "Removing existing {} {}..".format(
-                    object_type,
-                    dataset_path
-                ),
+                "Removing existing {} {}..".format(object_type, dataset_path),
                 logger=logger,
-                auto_newline=True
+                auto_newline=True,
             )
             remove_file_or_folder(dataset_path)
         os.makedirs(
             dataset_path
-                if dataset_path_is_folder
-                else os.path.dirname(dataset_path),
-            exist_ok=True
+            if dataset_path_is_folder
+            else os.path.dirname(dataset_path),
+            exist_ok=True,
         )
-        do_fetch_data_func(
-            dataset_name,
-            dataset_path,
-            logger=logger
-        )
+        do_fetch_data_func(dataset_name, dataset_path, logger=logger)
         log_or_print(
-            "Verifying \"{}\" dataset "
-            "downloaded into {}..".format(
-                dataset_name,
-                dataset_path
-            ),
+            'Verifying "{}" dataset '
+            "downloaded into {}..".format(dataset_name, dataset_path),
             logger=logger,
-            auto_newline=True
+            auto_newline=True,
         )
         if not assert_folder_func(dataset_path):
-            raise Exception(
-                "Downloaded data is not what was expected."
-            )
+            raise Exception("Downloaded data is not what was expected.")
     else:
         log_or_print(
-            "\"{}\" is already in {}!".format(
-                dataset_name,
-                dataset_path
-            ),
+            '"{}" is already in {}!'.format(dataset_name, dataset_path),
             logger=logger,
-            auto_newline=True
+            auto_newline=True,
         )
 
 
@@ -189,11 +161,7 @@ def convert_dataset_to_tensor_generator(dataset, batch_size):
     return DataLoader(dataset, batch_size=batch_size)
 
 
-def make_contents_as_in_subfolder(
-    src_folder,
-    subdir_name
-):
-
+def make_contents_as_in_subfolder(src_folder, subdir_name):
     remove_all_but_subdirs(src_folder, [subdir_name])
     folder_to_keep = os.path.join(src_folder, subdir_name)
     move_folder_contents(folder_to_keep, src_folder)
@@ -201,21 +169,13 @@ def make_contents_as_in_subfolder(
 
 
 def do_fetch_dataset_as_file(url):
-
-    def do_fetch_file_by_url(
-        dataset_name,
-        dataset_path,
-        logger=make_logger()
-    ):
+    def do_fetch_file_by_url(dataset_name, dataset_path, logger=make_logger()):
         if url == EMPTY_URL:
             NotImplementedError()
         log_or_print(
-            "Downloading \"{}\" into {}..".format(
-                dataset_name,
-                dataset_path
-            ),
+            'Downloading "{}" into {}..'.format(dataset_name, dataset_path),
             logger=logger,
-            auto_newline=True
+            auto_newline=True,
         )
         download_file_by_link(url, dataset_path)
 
@@ -235,36 +195,26 @@ def download_file_by_link(url, path):
 
 
 def download_file_by_yadisk_link(sharing_link, filename):
-
     def _get_real_direct_link(sharing_link):
-        pk_request = requests.get(
-            YANDEX_API_ENDPOINT.format(sharing_link)
-        )
-        return pk_request.json().get('href')
+        pk_request = requests.get(YANDEX_API_ENDPOINT.format(sharing_link))
+        return pk_request.json().get("href")
 
     direct_link = _get_real_direct_link(sharing_link)
     if direct_link:
         download = requests.get(direct_link)
-        with open(filename, 'wb') as out_file:
+        with open(filename, "wb") as out_file:
             out_file.write(download.content)
     else:
-        raise Exception(
-            "Can not download file from {}".format(
-                sharing_link
-            )
-        )
+        raise Exception("Can not download file from {}".format(sharing_link))
 
 
 def assert_dataset_as_file(file_hash, check_file_hash=CHECK_FILE_HASH):
-
     def assert_file_by_hash(dataset_path):
-
         path_exists = os.path.exists(dataset_path)
 
         file_hash_is_correct = True
         if path_exists and check_file_hash:
-            file_hash_is_correct \
-                = (compute_file_hash(dataset_path) == file_hash)
+            file_hash_is_correct = compute_file_hash(dataset_path) == file_hash
 
         return path_exists and file_hash_is_correct
 
@@ -272,36 +222,27 @@ def assert_dataset_as_file(file_hash, check_file_hash=CHECK_FILE_HASH):
 
 
 def randomly_subsampled_dataloader(dataloader, fraction, batch_size=None):
-
     if isinstance(dataloader, ManyDataloadersWrapper):
         new_dataloaders_list = []
         for sub_dataloader in dataloader.dataloaders_list:
             new_dataloaders_list.append(
                 randomly_subsampled_dataloader(
-                    sub_dataloader,
-                    fraction,
-                    batch_size=batch_size
+                    sub_dataloader, fraction, batch_size=batch_size
                 )
             )
         new_dataloader = wrap_dataloader(
-            new_dataloaders_list,
-            dataloader.wrapper
+            new_dataloaders_list, dataloader.wrapper
         )
     else:
         new_dataloader = subsample_dataloader_randomly(
-            dataloader,
-            fraction,
-            batch_size=batch_size
+            dataloader, fraction, batch_size=batch_size
         )
 
     return new_dataloader
 
 
 def subsample_dataloader_randomly(dataloader, fraction, batch_size=None):
-    num_samples = compute_proportion(
-        fraction,
-        len(dataloader.dataset)
-    )
+    num_samples = compute_proportion(fraction, len(dataloader.dataset))
     dataloader_is_wrapper = False
     wrapper = None
     # TODO(Alex | 12.06.2023) make valid for DspritesDataloaderWrapper as well
@@ -310,22 +251,21 @@ def subsample_dataloader_randomly(dataloader, fraction, batch_size=None):
         wrapper = dataloader.wrapper
         dataloader = dataloader.dataloader
     elif isinstance(dataloader, ManyDataloadersWrapper):
-        raise TypeError(f"Can't subsample dataloader of type: {type(dataloader)}")
+        raise TypeError(
+            f"Can't subsample dataloader of type: {type(dataloader)}"
+        )
     else:
         assert isinstance(dataloader, DataLoader)
 
     subsampled_indices = random.sample(
-        list(range(len(dataloader.dataset))),
-        num_samples
+        list(range(len(dataloader.dataset))), num_samples
     )
 
     dataloader_init_args = get_dataloader_init_args_from_existing_dataloader(
         dataloader
     )
 
-    dataloader_init_args["sampler"] = SubsetRandomSampler(
-        subsampled_indices
-    )
+    dataloader_init_args["sampler"] = SubsetRandomSampler(subsampled_indices)
     if batch_size:
         dataloader_init_args["batch_size"] = batch_size
 
@@ -345,8 +285,7 @@ def subsample_dataloader_randomly(dataloader, fraction, batch_size=None):
 
 
 def get_dataloader_init_args_from_existing_dataloader(
-    dataloader,
-    copy_batch_sampler=False
+    dataloader, copy_batch_sampler=False
 ):
     dataloader_init_args = {
         "dataset": dataloader.dataset,
@@ -356,7 +295,7 @@ def get_dataloader_init_args_from_existing_dataloader(
         "timeout": dataloader.timeout,
         "worker_init_fn": dataloader.worker_init_fn,
         "prefetch_factor": dataloader.prefetch_factor,
-        "persistent_workers": dataloader.persistent_workers
+        "persistent_workers": dataloader.persistent_workers,
     }
     if copy_batch_sampler:
         dataloader_init_args["batch_sampler"] = dataloader.batch_sampler
@@ -388,11 +327,9 @@ def make_or_load_from_cache(
     logger=None,
     unique_hash=None,
     verbose=False,
-    check_gc=False
+    check_gc=False,
 ):
-
     def update_object_fingerprint_attr(result, object_fingerprint):
-
         if isinstance(result, dict):
             result = UserDict(result)
 
@@ -406,8 +343,7 @@ def make_or_load_from_cache(
 
     if check_gc:
         objects_with_the_same_fingerprint = extract_from_gc_by_attribute(
-            FINGERPRINT_ATTR,
-            object_fingerprint
+            FINGERPRINT_ATTR, object_fingerprint
         )
 
         if len(objects_with_the_same_fingerprint) > 0:
@@ -416,7 +352,7 @@ def make_or_load_from_cache(
                     "Reusing object from RAM with fingerprint {}".format(
                         object_fingerprint
                     ),
-                    logger=logger
+                    logger=logger,
                 )
             return objects_with_the_same_fingerprint[0]
 
@@ -425,19 +361,15 @@ def make_or_load_from_cache(
     else:
         os.makedirs(cache_path, exist_ok=True)
         cache_fullpath = os.path.join(
-            cache_path,
-            "{}.pkl".format(object_fingerprint)
+            cache_path, "{}.pkl".format(object_fingerprint)
         )
 
     if cache_fullpath and os.path.exists(cache_fullpath):
         if verbose:
             log_or_print(
-                "Loading cached {} from {}".format(
-                    object_name,
-                    cache_fullpath
-                ),
+                "Loading cached {} from {}".format(object_name, cache_fullpath),
                 logger=logger,
-                auto_newline=True
+                auto_newline=True,
             )
 
         try:
@@ -449,23 +381,15 @@ def make_or_load_from_cache(
         except:
             error_or_print(
                 "Could not load object from {}\nReason:\n{}".format(
-                    cache_fullpath,
-                    traceback.format_exc()
+                    cache_fullpath, traceback.format_exc()
                 ),
-                logger=logger
+                logger=logger,
             )
 
     if forward_cache_path:
-        result = make_func(
-            object_config,
-            cache_path=cache_path,
-            logger=logger
-        )
+        result = make_func(object_config, cache_path=cache_path, logger=logger)
     else:
-        result = make_func(
-            object_config,
-            logger=logger
-        )
+        result = make_func(object_config, logger=logger)
 
     if cache_fullpath:
         try:
@@ -473,22 +397,19 @@ def make_or_load_from_cache(
             if verbose:
                 log_or_print(
                     "Saved cached {} into {}".format(
-                        object_name,
-                        cache_fullpath
+                        object_name, cache_fullpath
                     ),
                     logger=logger,
-                    auto_newline=True
+                    auto_newline=True,
                 )
         except OSError:
             error_or_print(
                 "Could not save cached {} to {}. "
                 "Reason: \n{} \nContinuing without saving it.".format(
-                    object_name,
-                    cache_fullpath,
-                    traceback.format_exc()
+                    object_name, cache_fullpath, traceback.format_exc()
                 ),
                 logger=logger,
-                auto_newline=True
+                auto_newline=True,
             )
 
     if check_gc:
@@ -498,7 +419,6 @@ def make_or_load_from_cache(
 
 
 def extract_from_gc_by_attribute(attribute_name, attribute_value):
-
     res = []
 
     with warnings.catch_warnings():
@@ -512,9 +432,8 @@ def extract_from_gc_by_attribute(attribute_name, attribute_value):
             except:
                 continue
 
-            if (
-                has_attribute
-                    and (getattr(obj, attribute_name) == attribute_value)
+            if has_attribute and (
+                getattr(obj, attribute_name) == attribute_value
             ):
                 res.append(obj)
 
@@ -522,7 +441,6 @@ def extract_from_gc_by_attribute(attribute_name, attribute_value):
 
 
 class SingleDataloaderWrapper:
-
     def __init__(self, dataloader, wrapper, **kwargs):
         self.dataloader = dataloader
         self.kwargs = kwargs
@@ -538,7 +456,6 @@ class SingleDataloaderWrapper:
 
 
 class ManyDataloadersWrapper:
-
     def __init__(self, dataloaders_list, wrapper, **kwargs):
         self.dataloaders_list = dataloaders_list
         self.batch_size = None
@@ -549,14 +466,15 @@ class ManyDataloadersWrapper:
             if self.batch_size is None:
                 self.batch_size = dataloader.batch_size
             else:
-                assert self.batch_size == dataloader.batch_size, \
-                    "All chaining dataloaders should have the same batchsize"
+                assert (
+                    self.batch_size == dataloader.batch_size
+                ), "All chaining dataloaders should have the same batchsize"
             self.length += len(dataloader)
 
     def __iter__(self):
         return self.wrapper(
             [iter(dataloader) for dataloader in self.dataloaders_list],
-            **self.kwargs
+            **self.kwargs,
         )
 
     def __len__(self):
@@ -568,9 +486,7 @@ def wrap_dataloader(wrappable, wrapper, **kwargs):
         return ManyDataloadersWrapper(wrappable, wrapper, **kwargs)
     else:
         wrapped_dataloader = SingleDataloaderWrapper(
-            wrappable,
-            wrapper,
-            **kwargs
+            wrappable, wrapper, **kwargs
         )
         add_custom_properties(wrappable, wrapped_dataloader)
         return wrapped_dataloader
@@ -583,17 +499,18 @@ def get_generic_train_eval_dataloaders(
     eval_batch_size,
     shuffle_train=True,
     shuffle_eval=False,
-    **dataloader_kwargs
+    **dataloader_kwargs,
 ):
-
-    def add_dataloaders(datasets_dict, batch_size, shuffle, **dataloader_kwargs):
+    def add_dataloaders(
+        datasets_dict, batch_size, shuffle, **dataloader_kwargs
+    ):
         dataloaders_dict = {}
         for dataset_name, dataset in datasets_dict.items():
             dataloaders_dict[dataset_name] = DataLoader(
                 dataset,
                 shuffle=shuffle,
                 batch_size=batch_size,
-                **dataloader_kwargs
+                **dataloader_kwargs,
             )
         return dataloaders_dict
 
@@ -605,7 +522,7 @@ def get_generic_train_eval_dataloaders(
             train_datasets_dict,
             train_batch_size,
             shuffle_train,
-            **dataloader_kwargs
+            **dataloader_kwargs,
         )
 
     if eval_batch_size > 0:
@@ -613,7 +530,7 @@ def get_generic_train_eval_dataloaders(
             eval_datasets_dict,
             eval_batch_size,
             shuffle_eval,
-            **dataloader_kwargs
+            **dataloader_kwargs,
         )
 
     return train_dataloaders, eval_dataloaders
@@ -622,23 +539,19 @@ def get_generic_train_eval_dataloaders(
 def uniformly_subsample_dataset(dataset, num_samples, deterministic):
     if num_samples > 0:
         if deterministic:
-            indices \
-                = deterministically_subsample_indices_uniformly(
-                    len(dataset),
-                    num_samples
-                )
+            indices = deterministically_subsample_indices_uniformly(
+                len(dataset), num_samples
+            )
         else:
             indices = randomly_subsample_indices_uniformly(
-                len(dataset),
-                num_samples
+                len(dataset), num_samples
             )
         dataset = torch.utils.data.Subset(dataset, indices)
     return dataset
 
 
 def show_dataloader_first_batch(
-    dataloader: torch.utils.data.DataLoader,
-    label_names: List[str]
+    dataloader: torch.utils.data.DataLoader, label_names: List[str]
 ):
     """
     Plots first batch of a dataloader
@@ -675,7 +588,7 @@ def show_dataloader_first_batch(
 
 def show_images_batch(
     images_batch: torch.tensor,
-    label_batches: Union[torch.tensor, Dict[str, torch.tensor]] = None
+    label_batches: Union[torch.tensor, Dict[str, torch.tensor]] = None,
 ):
     """
     Shows a batch of images as a square image grid.
@@ -688,7 +601,6 @@ def show_images_batch(
             or a dict that maps label name to the corresponding label batch.
     """
 
-
     images_list = []
 
     images_batch = images_batch.cpu()
@@ -698,7 +610,6 @@ def show_images_batch(
     n_images = images_batch.shape[0]
 
     if label_batches is not None:
-
         if not isinstance(label_batches, dict):
             label_batches = {"label": label_batches}
 
@@ -712,7 +623,7 @@ def show_images_batch(
                 append_dict(
                     label_lists,
                     {label_name: label_batch[i].item()},
-                    allow_new_keys=True
+                    allow_new_keys=True,
                 )
 
     show_images(images_list, label_lists)
@@ -723,8 +634,7 @@ def make_named_labels_batch(label_names, labels_batch):
         assert len(labels_batch) == len(label_names)
         labels_batch = {
             label_name: label_batch
-                for label_name, label_batch
-                    in zip(label_names, labels_batch)
+            for label_name, label_batch in zip(label_names, labels_batch)
         }
     else:
         assert len(label_names) == 1
@@ -734,7 +644,6 @@ def make_named_labels_batch(label_names, labels_batch):
 
 
 class ChainingIteratorsWrapper:
-
     def __init__(self, iterators_list, random_order=False):
         self.iterators = iterators_list
         self.not_exhausted_ids = list(range(len(self.iterators)))
@@ -770,14 +679,11 @@ class ChainingIteratorsWrapper:
 def chain_dataloaders(dataloaders_list, random_order=False):
     assert len(dataloaders_list) > 1, "Need at least 2 dataloaders to chain"
     return wrap_dataloader(
-        dataloaders_list,
-        ChainingIteratorsWrapper,
-        random_order=random_order
+        dataloaders_list, ChainingIteratorsWrapper, random_order=random_order
     )
 
 
 class DropLastIteratorWrapper:
-
     def __init__(self, iterator):
         self.iterator = iterator
 
@@ -790,7 +696,6 @@ class DropLastIteratorWrapper:
 
 
 def make_sampler(data_source, sampler_config):
-
     if sampler_config is None:
         return None
 
@@ -809,45 +714,38 @@ def get_base_dataset(
     get_dataset_url,
     read_dataset,
     check_file_hash=CHECK_FILE_HASH,
-    logger=None
+    logger=None,
 ):
-
-    assert '.' in dataset_filename
-    dataset_name, _ = dataset_filename.split('.')
+    assert "." in dataset_filename
+    dataset_name, _ = dataset_filename.split(".")
 
     log_or_print(f"Making base_data for {dataset_name}..", logger=logger)
     dataset_path = os.path.join(
-        get_with_assert(base_data_config, "path"),
-        dataset_filename
+        get_with_assert(base_data_config, "path"), dataset_filename
     )
     fetch_data(
         dataset_path=dataset_path,
         assert_folder_func=assert_dataset_as_file(
-            get_dataset_hash(dataset_name),
-            check_file_hash=check_file_hash
+            get_dataset_hash(dataset_name), check_file_hash=check_file_hash
         ),
         do_fetch_data_func=do_fetch_dataset_as_file(
             get_dataset_url(dataset_name)
         ),
         logger=logger,
-        dataset_path_is_folder=False
+        dataset_path_is_folder=False,
     )
-    dataset = read_dataset(
-        filename=dataset_path
-    )
+    dataset = read_dataset(filename=dataset_path)
 
     return dataset
 
 
 class CachingDatasetWrapper(torch.utils.data.Dataset):
-
     def __init__(self, dataset, unique_hash, cache_path):
         self.dataset = dataset
         self.unique_hash = unique_hash
         self.cache_path = cache_path
 
     def __getitem__(self, index):
-
         def make_item(item_config, logger):
             return {"item": self.dataset[index]}
 
@@ -857,7 +755,7 @@ class CachingDatasetWrapper(torch.utils.data.Dataset):
             unique_hash=self.unique_hash,
             make_func=make_item,
             cache_path=self.cache_path,
-            verbose=False
+            verbose=False,
         )
 
         return item["item"]
@@ -871,16 +769,79 @@ def make_caching_dataset(dataset, unique_hash, cache_path):
 
 
 class DatasetWrapperWithIndex(torch.utils.data.Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
 
-        def __init__(self, dataset):
-            self.dataset = dataset
+    def __getitem__(self, index):
+        return *self.dataset[index], index
 
-        def __getitem__(self, index):
-            return *self.dataset[index], index
-
-        def __len__(self):
-            return len(self.dataset)
+    def __len__(self):
+        return len(self.dataset)
 
 
 def make_dataset_wrapper_with_index(dataset):
     return DatasetWrapperWithIndex(dataset)
+
+
+# function is taken from: https://github.com/bethgelab/model-vs-human/blob/master/modelvshuman/models/pytorch/simclr/utils/modules.py#L21
+def unnormalize(tensor, mean=[0], std=[1], inplace=False):
+    """Unnormalize a tensor image by first multiplying by std (channel-wise) and then adding the mean (channel-wise)
+
+    Args:
+        tensor (Tensor): Tensor image of size (N, C, H, W) to be de-standarized.
+        mean (sequence): Sequence of original means for each channel.
+        std (sequence): Sequence of original standard deviations for each channel.
+        inplace(bool,optional): Bool to make this operation inplace.
+
+    Returns:
+        Tensor: Unnormalized Tensor image.
+
+    """
+
+    if not torch.is_tensor(tensor):
+        raise TypeError(
+            "tensor should be a torch tensor. Got {}.".format(type(tensor))
+        )
+
+    if tensor.ndimension() != 4:
+        raise ValueError(
+            "Expected tensor to be a tensor image of size (N, C, H, W). Got tensor.size() = "
+            "{}.".format(tensor.size())
+        )
+    if not inplace:
+        tensor = tensor.clone()
+
+    dtype = tensor.dtype
+    mean = torch.as_tensor(mean, dtype=dtype, device=tensor.device)
+    std = torch.as_tensor(std, dtype=dtype, device=tensor.device)
+
+    if (std == 0).any():
+        raise ValueError(
+            "std evaluated to zero after conversion to {}, leading to division by zero.".format(
+                dtype
+            )
+        )
+
+    if mean.ndim == 1:
+        mean = mean[None, :, None, None]
+    if std.ndim == 1:
+        std = std[None, :, None, None]
+
+    tensor.mul_(std).add_(mean)
+    return tensor
+
+
+def tensor_for_matplotlib(tensor):
+    if torch.is_tensor(tensor):
+        tensor = tensor.cpu().numpy()
+
+    if len(tensor.shape) == 4:
+        assert tensor.shape[0] == 1
+        tensor = tensor.squeeze(0)
+
+    assert len(tensor.shape) == 3
+
+    if tensor.shape[0] in (1, 3):
+        tensor = np.transpose(tensor, (1, 2, 0))
+
+    return tensor

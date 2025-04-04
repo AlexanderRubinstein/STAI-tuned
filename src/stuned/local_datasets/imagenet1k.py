@@ -12,20 +12,16 @@ from stuned.local_datasets.utils import (
     make_default_cache_path,
     uniformly_subsample_dataset,
     make_dataset_wrapper_with_index,
-    make_caching_dataset
+    make_caching_dataset,
 )
-from stuned.utility.utils import (
-    read_yaml,
-    get_project_root_path,
-    get_hash
-)
+from stuned.utility.utils import read_yaml, get_project_root_path, get_hash
 from stuned.local_datasets.hugging_face_scripts.imagenet1k_classes import (
-    IMAGENET2012_CLASSES
+    IMAGENET2012_CLASSES,
 )
-from stuned.local_datasets.transforms import (
-    TRANSFORMS_KEY
-)
+from stuned.local_datasets.transforms import TRANSFORMS_KEY
+from stuned.local_datasets.utils import unnormalize
 from datasets import load_dataset
+
 sys.path.pop(0)
 
 
@@ -33,26 +29,28 @@ IMAGENET_DEFAULT_RES = (224, 224)
 ONLY_VAL_ERROR_MSG = "Only val dataloader is implemented for ImageNet1k"
 IMAGENET2012_CLASSES_LIST = [
     (class_id, class_name)
-        for class_id, class_name in IMAGENET2012_CLASSES.items()
+    for class_id, class_name in IMAGENET2012_CLASSES.items()
 ]
 IMAGENET_KEY = "imagenet1k"
 IMAGENET_TRAIN_NUM_SAMPLES = 1281167
 IMAGENET_VAL_NUM_SAMPLES = 50000
-DEFAULT_HUGGING_FACE_ACCESS_TOKEN_PATH \
-    = os.path.expanduser("~/.config/hugging_face/hf.yaml")
+DEFAULT_HUGGING_FACE_ACCESS_TOKEN_PATH = os.path.expanduser(
+    "~/.config/hugging_face/hf.yaml"
+)
 DEFAULT_MEAN = [0.485, 0.456, 0.406]
 DEFAULT_STD = [0.229, 0.224, 0.225]
 
 
 def make_default_transforms_for_imagenet():
-    return torchvision.transforms.Compose([
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Resize(IMAGENET_DEFAULT_RES)
-    ])
+    return torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Resize(IMAGENET_DEFAULT_RES),
+        ]
+    )
 
 
 def make_torch_tensor_from_image(image):
-
     # grayscale to RGB
     if len(image.shape) == 2:
         image.unsqueeze_(2)
@@ -61,15 +59,14 @@ def make_torch_tensor_from_image(image):
     return (
         torchvision.transforms.Resize(IMAGENET_DEFAULT_RES)(
             image.permute(2, 0, 1)
-        ).to(dtype=torch.float32) / SCALING_FACTOR
+        ).to(dtype=torch.float32)
+        / SCALING_FACTOR
     )
 
 
 def make_transform_for_huggingface(transform):
-
     def transforms_for_dict(examples):
-
-        examples['image'] = [
+        examples["image"] = [
             transform(image.convert("RGB")) for image in examples["image"]
         ]
 
@@ -84,24 +81,23 @@ def get_imagenet_dataset(
     transform=None,
     num_samples=0,
     subset_indices=None,
-    reverse_indices=False
+    reverse_indices=False,
 ):
-
-    ONLY_VAL = "when \"only_val\" is true"
+    ONLY_VAL = 'when "only_val" is true'
 
     # if imagenet_config["only_val"]:
     hf_token_path = imagenet_config.get("hf_token_path")
     if hf_token_path is not None:
-
-        assert num_samples == 0, \
-            "Can't specify num_samples for hugging face dataset"
+        assert (
+            num_samples == 0
+        ), "Can't specify num_samples for hugging face dataset"
 
         # where pyarrow files are downloaded
         cache_dir = imagenet_config.get("cache_dir", make_default_cache_path())
         # where splits are created
         data_dir = imagenet_config.get(
             "data_dir",
-            os.path.join(make_default_data_path(), f"ImageNet1k_{split}")
+            os.path.join(make_default_data_path(), f"ImageNet1k_{split}"),
         )
         access_token = read_yaml(hf_token_path)["token"]
 
@@ -112,10 +108,10 @@ def get_imagenet_dataset(
             split=split,
             cache_dir=cache_dir,
             data_dir=data_dir,
-            token=access_token
+            token=access_token,
         )
 
-        dataset.set_format(type='torch', columns=['image', 'label'])
+        dataset.set_format(type="torch", columns=["image", "label"])
 
         if transform is None:
             transform = make_default_transforms_for_imagenet()
@@ -130,22 +126,21 @@ def get_imagenet_dataset(
             transform = make_default_transforms_for_imagenet()
 
         dataset = torchvision.datasets.ImageNet(
-            root=imagenet_config["path"],
-            split=split,
-            transform=transform
+            root=imagenet_config["path"], split=split, transform=transform
         )
 
     if subset_indices is not None:
-        assert num_samples == 0, \
-            "Can't specify both subset_indices and num_samples"
+        assert (
+            num_samples == 0
+        ), "Can't specify both subset_indices and num_samples"
         if reverse_indices:
-            subset_indices = list(set(range(len(dataset))) - set(subset_indices))
+            subset_indices = list(
+                set(range(len(dataset))) - set(subset_indices)
+            )
         dataset = torch.utils.data.Subset(dataset, subset_indices)
 
     dataset = uniformly_subsample_dataset(
-        dataset,
-        num_samples,
-        deterministic=True
+        dataset, num_samples, deterministic=True
     )
     return dataset
 
@@ -169,16 +164,15 @@ def get_imagenet1k_dataloader(
     return_index=False,
     subset_indices=None,
     reverse_indices=False,
-    num_workers=0
+    num_workers=0,
 ):
-
     dataset = get_imagenet_dataset(
         imagenet_config,
         split,
         transform=transform,
         num_samples=num_samples,
         subset_indices=subset_indices,
-        reverse_indices=reverse_indices
+        reverse_indices=reverse_indices,
     )
 
     if imagenet_config.get("caching", False):
@@ -186,39 +180,37 @@ def get_imagenet1k_dataloader(
             TRANSFORMS_KEY if split == "train" else "eval_transforms"
         )
         cache_path = os.path.join(
-            imagenet_config.get(
-                "cache_path",
-                make_default_cache_path()
-            ),
+            imagenet_config.get("cache_path", make_default_cache_path()),
             "ImageNet1k",
-            split
+            split,
         )
         os.makedirs(cache_path, exist_ok=True)
         dataset = make_caching_dataset(
             dataset,
             unique_hash=get_hash(
-                    imagenet_config[transforms_key]
-                |
-                    {"split": split}
-                |
-                    {"subset": imagenet_config.get("subset_indices", {}).get(split)}
-                |
-                    {"only_val": imagenet_config.get("only_val")}
+                imagenet_config[transforms_key]
+                | {"split": split}
+                | {
+                    "subset": imagenet_config.get("subset_indices", {}).get(
+                        split
+                    )
+                }
+                | {"only_val": imagenet_config.get("only_val")}
             ),
-            cache_path=cache_path
+            cache_path=cache_path,
         )
 
     if return_index:
         dataset = make_dataset_wrapper_with_index(dataset)
 
-    use_collate = (imagenet_config.get("hf_token_path") is not None)
+    use_collate = imagenet_config.get("hf_token_path") is not None
 
     return torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         collate_fn=(collate_fn_hf if use_collate else None),
-        num_workers=num_workers
+        num_workers=num_workers,
     )
 
 
@@ -229,9 +221,8 @@ def get_imagenet_dataloaders(
     train_transform=None,
     eval_transform=None,
     return_index=False,
-    num_workers=0
+    num_workers=0,
 ):
-
     trainloader = None
     testloaders = None
 
@@ -250,7 +241,7 @@ def get_imagenet_dataloaders(
             return_index=return_index,
             subset_indices=None,
             reverse_indices=imagenet_config.get("reverse_indices", False),
-            num_workers=num_workers
+            num_workers=num_workers,
         )
 
     if eval_batch_size > 0:
@@ -266,8 +257,17 @@ def get_imagenet_dataloaders(
                 return_index=return_index,
                 subset_indices=None,
                 reverse_indices=imagenet_config.get("reverse_indices", False),
-                num_workers=num_workers
-            ) for split in imagenet_config["test_splits"]
+                num_workers=num_workers,
+            )
+            for split in imagenet_config["test_splits"]
         }
 
     return trainloader, testloaders
+
+
+def unnormalize_in1k(image):
+    return unnormalize(image, DEFAULT_MEAN, DEFAULT_STD)
+
+
+def in_class_name(label):
+    return IMAGENET2012_CLASSES_LIST[label][1].split(",")[0]
